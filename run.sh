@@ -14,4 +14,4 @@ which bishengir-compile
 which bishengir-opt
 
 # run case_judge.py
-python3 /coursegrader/dockerext/case_judge.py
+python3 ./case_judge.py
