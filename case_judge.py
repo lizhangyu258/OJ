@@ -119,10 +119,6 @@ def run_testcase(testcase_file):
 def parse_testcase_output(testcase_result):
     """解析测试用例输出，提取性能指标等信息"""
     parsed_data = {
-        'has_output': len(testcase_result['stdout']) > 0,
-        'has_error': len(testcase_result['stderr']) > 0,
-        'output_length': len(testcase_result['stdout']),
-        'error_length': len(testcase_result['stderr']),
         'avg_execution_time': None
     }
     
@@ -211,9 +207,7 @@ def generate_final_result(testcase_results):
                 'testcase': r['testcase'],
                 'exit_code': r['exit_code'],
                 'score': calculate_testcase_score(r, parsed_outputs[i], baseline_data),
-                'avg_execution_time': parsed_outputs[i].get('avg_execution_time'),
-                'has_output': parsed_outputs[i]['has_output'],
-                'has_error': parsed_outputs[i]['has_error']
+                'avg_execution_time': parsed_outputs[i].get('avg_execution_time')
             }
             for i, r in enumerate(testcase_results)
         ]
