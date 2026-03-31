@@ -29,15 +29,16 @@ prof_config = torch_npu.profiler._ExperimentalConfig(
 warmup_stem_num = 5
 exec_step_num = 10
 all_step_num = warmup_stem_num + exec_step_num
-prof_output_dir = os.path.join(ROOT_DIR, "prof_output")
-os.makedirs(os.path.dirname(prof_output_dir), exist_ok=True)
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+prof_output_dir = os.path.join(ROOT_DIR, "prof")
+os.makedirs(prof_output_dir, exist_ok=True)
 
 prof = torch_npu.profiler.profile(
     activities=[
         torch_npu.profiler.ProfilerActivity.CPU,
         torch_npu.profiler.ProfilerActivity.NPU
     ],
-    schedule=torch.profiler.schedule(wait=0, warmup=warmup_stem_num, active=exec_step_num, repeat=1)
+    schedule=torch_npu.profiler.schedule(wait=0, warmup=warmup_stem_num, active=exec_step_num, repeat=1),
     record_shapes=False,
     profile_memory=False,
     with_stack=False,
@@ -49,6 +50,10 @@ prof = torch_npu.profiler.profile(
 model = TestCase1()
 device = 'npu'
 model.to(device)
+
+# 定义输入张量
+x = torch.randn(10, 10, device=device)
+y = torch.randn(10, 10, device=device)
 
 compiled_model = torch.compile(model, dynamic=False)
 compile_out, codes = run_and_get_code(compiled_model,x,y)
