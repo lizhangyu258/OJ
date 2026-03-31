@@ -58,7 +58,20 @@ y = torch.randn(10, 10, device=device)
 compiled_model = torch.compile(model, dynamic=False)
 compile_out, codes = run_and_get_code(compiled_model,x,y)
 print("compile_out: ", compile_out)
-print("codes: ", codes)
+print("codes[0]: ", codes[0])
+
+eager_result = model(x, y)
+graph_result = compiled_model(x, y)
+if torch.npu.is_available():
+    torch.npu.synchronize()
+for i, (expected, actual) in enumerate(zip(eager_result, graph_result)):
+    if torch.testing.assert_close(expected, actual, rtol=1e-5, atol=1e-5):
+        print(f"Test result {i}: Passed")
+    else:
+        print(f"Test result {i}: Failed")
+        print(f"Expected: {expected}")
+        print(f"Actual: {actual}")
+        print(f"max diff: ", (expected - actual).abs().max().item())
 
 prof.start()
 with torch.no_grad():
