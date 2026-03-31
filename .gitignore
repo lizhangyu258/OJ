@@ -9,3 +9,10 @@ compile_commands.json
 CTestTestfile.cmake
 outputs/
 prof/
+
+# Python cache files
+*.pyc
+*.pyo
+__pycache__/
+*.py[cod]
+*$py.class
