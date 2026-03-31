@@ -3,6 +3,8 @@ import subprocess
 import json
 import glob
 import logging
+import re
+import yaml
 from datetime import datetime
 
 # 设置日志配置
@@ -15,12 +17,31 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 TESTCASES_DIR = os.path.join(ROOT_DIR, 'testcases')
 # 输出目录
 OUTPUTS_DIR = os.path.join(ROOT_DIR, 'outputs')
+# Baseline数据目录
+BASELINE_DIR = os.path.join(ROOT_DIR, 'baseline')
+BASELINE_DATA_FILE = os.path.join(BASELINE_DIR, 'data.yaml')
 
 # 创建输出目录（如果不存在）
 def create_output_dir():
     if not os.path.exists(OUTPUTS_DIR):
         os.makedirs(OUTPUTS_DIR)
         logger.info(f"Created output directory: {OUTPUTS_DIR}")
+
+# 加载baseline数据
+def load_baseline_data():
+    """加载baseline数据"""
+    if not os.path.exists(BASELINE_DATA_FILE):
+        logger.warning(f"Baseline data file not found: {BASELINE_DATA_FILE}")
+        return {}
+    
+    try:
+        with open(BASELINE_DATA_FILE, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+            logger.info(f"Loaded baseline data from {BASELINE_DATA_FILE}")
+            return data if data else {}
+    except Exception as e:
+        logger.error(f"Error loading baseline data: {str(e)}")
+        return {}
 
 # 获取所有测试用例文件
 def get_testcase_files():
@@ -94,40 +115,73 @@ def run_testcase(testcase_file):
             'error_file': error_file
         }
 
-# 解析测试用例输出（预留接口，用于后续扩展）
+# 解析测试用例输出
 def parse_testcase_output(testcase_result):
     """解析测试用例输出，提取性能指标等信息"""
-    # 当前实现为简单示例，后续可根据实际需求扩展
     parsed_data = {
         'has_output': len(testcase_result['stdout']) > 0,
         'has_error': len(testcase_result['stderr']) > 0,
         'output_length': len(testcase_result['stdout']),
-        'error_length': len(testcase_result['stderr'])
+        'error_length': len(testcase_result['stderr']),
+        'avg_execution_time': None
     }
     
-    # 预留：从输出中提取性能指标的逻辑
-    # 例如：提取编译时间、执行时间、加速比等
+    # 从输出中提取平均执行时间
+    # 匹配格式: "Average execution time: {avg_exec_time} us"
+    stdout = testcase_result['stdout']
+    pattern = r'Average execution time:\s*([\d.]+)\s*us'
+    match = re.search(pattern, stdout)
+    
+    if match:
+        try:
+            avg_time = float(match.group(1))
+            parsed_data['avg_execution_time'] = avg_time
+            logger.info(f"Parsed average execution time: {avg_time} us")
+        except ValueError:
+            logger.warning(f"Failed to parse average execution time from: {match.group(1)}")
+    else:
+        logger.warning("Average execution time not found in output")
     
     return parsed_data
 
-# 计算测试用例评分（预留接口，用于后续扩展）
-def calculate_testcase_score(testcase_result, parsed_output):
-    """根据测试用例结果和解析的输出计算评分"""
-    # 当前实现为简单示例，后续可根据实际需求扩展
-    score = 0.0
+# 计算测试用例评分
+def calculate_testcase_score(testcase_result, parsed_output, baseline_data):
+    """根据测试用例结果和解析的输出计算评分（加速比）"""
+    testcase_name = testcase_result['testcase']
     
     # 基础分：测试用例成功运行
-    if testcase_result['exit_code'] == 0:
-        score += 100.0
+    if testcase_result['exit_code'] != 0:
+        logger.error(f"Test case {testcase_name} failed with exit code {testcase_result['exit_code']}, score: 0.0")
+        return 0.0
     
-    # 预留：根据性能指标加权计算评分的逻辑
-    # 例如：根据加速比、编译时间等指标进行加权
+    # 获取当前测试用例的平均执行时间
+    current_avg_time = parsed_output.get('avg_execution_time')
+    if current_avg_time is None:
+        logger.error(f"No average execution time found for {testcase_name}, score: 0.0")
+        return 0.0
     
-    return score
+    # 获取baseline数据
+    if testcase_name not in baseline_data:
+        logger.error(f"No baseline data found for {testcase_name}, score: 0.0")
+        return 0.0
+    
+    baseline_avg_time = baseline_data[testcase_name].get('avg_execution_time')
+    if baseline_avg_time is None or baseline_avg_time <= 0:
+        logger.error(f"Invalid baseline avg_execution_time for {testcase_name}, score: 0.0")
+        return 0.0
+    
+    # 计算加速比 = baseline时间 / 当前时间
+    speedup_ratio = baseline_avg_time / current_avg_time
+    logger.info(f"Speedup ratio for {testcase_name}: {speedup_ratio:.4f} (baseline: {baseline_avg_time} us, current: {current_avg_time} us)")
+    
+    return speedup_ratio
 
 # 生成最终结果
 def generate_final_result(testcase_results):
     """根据所有测试用例的结果生成最终评测结果"""
+    # 加载baseline数据
+    baseline_data = load_baseline_data()
+    
     # 检查所有测试用例是否成功
     all_passed = all(result['exit_code'] == 0 for result in testcase_results)
     verdict = 'AC' if all_passed else 'WA'
@@ -139,10 +193,11 @@ def generate_final_result(testcase_results):
     for result in testcase_results:
         parsed_output = parse_testcase_output(result)
         parsed_outputs.append(parsed_output)
-        score = calculate_testcase_score(result, parsed_output)
+        score = calculate_testcase_score(result, parsed_output, baseline_data)
+        logger.info(f"Test case {result['testcase']} score: {score:.4f}")
         total_score += score
     
-    # 平均评分（可根据实际需求调整）
+    # 平均评分（加速比的平均值）
     avg_score = total_score / len(testcase_results) if testcase_results else 0
     
     # 生成详细输出
@@ -155,7 +210,8 @@ def generate_final_result(testcase_results):
             {
                 'testcase': r['testcase'],
                 'exit_code': r['exit_code'],
-                'score': calculate_testcase_score(r, parsed_outputs[i]),
+                'score': calculate_testcase_score(r, parsed_outputs[i], baseline_data),
+                'avg_execution_time': parsed_outputs[i].get('avg_execution_time'),
                 'has_output': parsed_outputs[i]['has_output'],
                 'has_error': parsed_outputs[i]['has_error']
             }
@@ -167,7 +223,7 @@ def generate_final_result(testcase_results):
     final_result = {
         'verdict': verdict,
         'rank': {
-            'rank': avg_score  # 暂用平均评分作为排名依据
+            'rank': avg_score  # 使用平均加速比作为排名依据
         },
         'detail': detail
     }

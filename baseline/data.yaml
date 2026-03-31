@@ -1,0 +1,8 @@
+# Baseline data for test cases
+# avg_execution_time is in microseconds (us)
+
+case1.py:
+  avg_execution_time: 20.0
+
+case2.py:
+  avg_execution_time: 20.0
