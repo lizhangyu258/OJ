@@ -5,6 +5,9 @@ os.environ['TORCHINDUCTOR_NPU_BACKEND'] = 'mlir'
 import torch
 import torch_npu
 from torch._inductor.utils import run_and_get_code
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.profiler_utils import setup_profiler_output, find_and_parse_op_statistic, get_default_prof_dir
 
 # config导入在compile执行之前
 torch._inductor.config.npu_backend = "mlir"
@@ -55,9 +58,7 @@ else:
 warmup_stem_num = 5
 exec_step_num = 10
 all_step_num = warmup_stem_num + exec_step_num
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-prof_output_dir = os.path.join(PROJECT_ROOT, "prof")
-os.makedirs(prof_output_dir, exist_ok=True)
+prof_output_dir = setup_profiler_output(get_default_prof_dir())
 
 prof = torch_npu.profiler.profile(
     activities=[
@@ -82,3 +83,8 @@ with torch.no_grad():
             torch.npu.synchronize()
         prof.step()
 prof.stop()
+
+print(f"\nProfiler results saved to: {prof_output_dir}")
+avg_exec_time = find_and_parse_op_statistic(prof_output_dir)
+if avg_exec_time is not None:
+    print(f"Average execution time: {avg_exec_time} us")
