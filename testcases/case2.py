@@ -5,7 +5,6 @@ os.environ['TORCHINDUCTOR_NPU_BACKEND'] = 'mlir'
 import torch
 import torch_npu
 from torch._inductor.utils import run_and_get_code
-import torch
 
 # config导入在compile执行之前
 torch._inductor.config.npu_backend = "mlir"
@@ -29,8 +28,8 @@ prof_config = torch_npu.profiler._ExperimentalConfig(
 warmup_stem_num = 5
 exec_step_num = 10
 all_step_num = warmup_stem_num + exec_step_num
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-prof_output_dir = os.path.join(ROOT_DIR, "prof")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+prof_output_dir = os.path.join(PROJECT_ROOT, "prof")
 os.makedirs(prof_output_dir, exist_ok=True)
 
 prof = torch_npu.profiler.profile(
@@ -44,7 +43,8 @@ prof = torch_npu.profiler.profile(
     with_stack=False,
     with_modules=False,
     with_flops=False,
-    experimental_config=prof_config
+    experimental_config=prof_config,
+    output_directory=prof_output_dir
 )
 
 model = TestCase1()
@@ -64,14 +64,15 @@ eager_result = model(x, y)
 graph_result = compiled_model(x, y)
 if torch.npu.is_available():
     torch.npu.synchronize()
-for i, (expected, actual) in enumerate(zip(eager_result, graph_result)):
-    if torch.testing.assert_close(expected, actual, rtol=1e-5, atol=1e-5):
-        print(f"Test result {i}: Passed")
-    else:
-        print(f"Test result {i}: Failed")
-        print(f"Expected: {expected}")
-        print(f"Actual: {actual}")
-        print(f"max diff: ", (expected - actual).abs().max().item())
+
+# 直接比较整个张量而不是逐行比较
+if torch.allclose(eager_result, graph_result, rtol=1e-5, atol=1e-5):
+    print("Precision test result: Passed")
+else:
+    print("Precision test result: Failed")
+    print(f"Expected: {eager_result}")
+    print(f"Actual: {graph_result}")
+    print(f"max diff: ", (eager_result - graph_result).abs().max().item())
 
 prof.start()
 with torch.no_grad():
