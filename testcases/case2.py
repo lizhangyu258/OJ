@@ -15,7 +15,7 @@ class TestCase1(torch.nn.Module):
 
 prof_config = torch_npu.profiler._ExperimentalConfig(
     export_type = [torch_npu.profiler.ExportType.Text],
-    profiler_level=torch_npu.profiler.ProfilerLevel.Level2,
+    profiler_level=torch_npu.profiler.ProfilerLevel.Level1,
     msprof_tx=False,
     aic_metrics=torch_npu.profiler.AiCMetrics.AiCoreNone,
     l2_cache=False,
@@ -23,28 +23,6 @@ prof_config = torch_npu.profiler._ExperimentalConfig(
     data_simplification=False,
     record_op_args=False,
     gc_detect_threshold=None
-)
-
-warmup_stem_num = 5
-exec_step_num = 10
-all_step_num = warmup_stem_num + exec_step_num
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-prof_output_dir = os.path.join(PROJECT_ROOT, "prof")
-os.makedirs(prof_output_dir, exist_ok=True)
-
-prof = torch_npu.profiler.profile(
-    activities=[
-        torch_npu.profiler.ProfilerActivity.CPU,
-        torch_npu.profiler.ProfilerActivity.NPU
-    ],
-    schedule=torch_npu.profiler.schedule(wait=0, warmup=warmup_stem_num, active=exec_step_num, repeat=1),
-    record_shapes=False,
-    profile_memory=False,
-    with_stack=False,
-    with_modules=False,
-    with_flops=False,
-    experimental_config=prof_config,
-    output_directory=prof_output_dir
 )
 
 model = TestCase1()
@@ -73,6 +51,28 @@ else:
     print(f"Expected: {eager_result}")
     print(f"Actual: {graph_result}")
     print(f"max diff: ", (eager_result - graph_result).abs().max().item())
+
+warmup_stem_num = 5
+exec_step_num = 10
+all_step_num = warmup_stem_num + exec_step_num
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+prof_output_dir = os.path.join(PROJECT_ROOT, "prof")
+os.makedirs(prof_output_dir, exist_ok=True)
+
+prof = torch_npu.profiler.profile(
+    activities=[
+        torch_npu.profiler.ProfilerActivity.CPU,
+        torch_npu.profiler.ProfilerActivity.NPU
+    ],
+    schedule=torch_npu.profiler.schedule(wait=0, warmup=warmup_stem_num, active=exec_step_num, repeat=1),
+    record_shapes=False,
+    profile_memory=False,
+    with_stack=False,
+    with_modules=False,
+    with_flops=False,
+    experimental_config=prof_config,
+    on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(prof_output_dir)
+)
 
 prof.start()
 with torch.no_grad():
