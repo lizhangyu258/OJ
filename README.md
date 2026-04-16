@@ -19,6 +19,7 @@ OJ/
 ## 环境要求
 
 - Python 3.6+
+- PyYAML
 - PyTorch
 - torch_npu
 - bishengir-compile 和 bishengir-opt 工具
@@ -28,6 +29,12 @@ OJ/
 ### 1. 准备工作
 
 确保bishengir-compile和bishengir-opt工具已放置在项目根目录下。
+
+安装 Python 依赖：
+
+```bash
+python3 -m pip install -r requirements.txt
+```
 
 ### 2. 运行评测
 
@@ -148,6 +155,14 @@ print(codes[0])
 - 实现更复杂的评分算法，考虑多种性能指标
 - 添加结果可视化功能，生成性能对比图表
 - 支持并行运行测试用例，提高评测效率
+
+## 运行测试
+
+可以使用 `unittest` 运行核心逻辑测试：
+
+```bash
+python3 -m unittest discover -s tests
+```
 
 ## 注意事项
 

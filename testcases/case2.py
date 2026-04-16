@@ -7,7 +7,7 @@ import torch_npu
 from torch._inductor.utils import run_and_get_code
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils.profiler_utils import setup_profiler_output, find_and_parse_op_statistic, get_default_prof_dir
+from utils.profiler import setup_profiler_output, find_and_parse_op_statistic, get_default_prof_dir
 
 # config导入在compile执行之前
 torch._inductor.config.npu_backend = "mlir"
