@@ -3,7 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
-from utils import run_full_benchmark
+from utils import run_full_benchmark, setup_logging
 
 
 def op_calc(x, y):
@@ -11,6 +11,8 @@ def op_calc(x, y):
 
 
 def main():
+    setup_logging()
+    
     device = 'npu'
     x = torch.randn((3,), requires_grad=False, dtype=torch.float32, device=device)
     y = torch.randn((3,), requires_grad=False, dtype=torch.float32, device=device)
@@ -22,7 +24,7 @@ def main():
         compile_options={"options": {"npu_backend": "mlir"}},
         warmup_steps=5,
         exec_steps=10,
-        use_baseline_b0=True
+        use_baseline_eager=True
     )
 
 

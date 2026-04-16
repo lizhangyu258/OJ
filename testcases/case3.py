@@ -3,7 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
-from utils import run_benchmark
+from utils import run_benchmark, setup_logging
 
 
 class TestCase3(torch.nn.Module):
@@ -12,6 +12,8 @@ class TestCase3(torch.nn.Module):
 
 
 def main():
+    setup_logging()
+    
     model = TestCase3()
     device = 'npu'
     
