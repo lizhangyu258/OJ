@@ -121,7 +121,6 @@ def main():
     if not testcase_files:
         logger.warning("No test cases found in testcases directory")
         final_result = build_empty_result()
-        print(json.dumps(final_result, indent=2))
         return
     
     # 运行所有测试用例
@@ -138,8 +137,7 @@ def main():
         use_baseline_eager=args.use_baseline_eager
     )
     
-    print(json.dumps(final_result, indent=2))
-    
+    logger.info(f"final_result json: {json.dumps(final_result, indent=2)}")
     logger.info("Case evaluation completed")
 
 if __name__ == '__main__':

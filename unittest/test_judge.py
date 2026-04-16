@@ -13,6 +13,7 @@ from utils.judge import generate_final_result
 from utils.judge import is_functional_test_passed
 from utils.judge import load_baseline_data
 from utils.judge import parse_testcase_output
+from utils.profiler import get_step_time_from_csv
 
 
 class CaseJudgeCoreTests(unittest.TestCase):
@@ -219,6 +220,54 @@ class CaseJudgeCoreTests(unittest.TestCase):
         self.assertEqual(result["rank"]["rank"], 0.0)
         self.assertEqual(result["detail"]["timestamp"], now.isoformat())
         self.assertEqual(result["detail"]["testcase_details"], [])
+
+
+class ProfilerTests(unittest.TestCase):
+    def test_get_step_time_from_csv_returns_none_when_file_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_path = Path(temp_dir) / "missing.csv"
+            self.assertIsNone(get_step_time_from_csv(str(missing_path)))
+
+    def test_get_step_time_from_csv_returns_none_when_only_header(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "test.csv"
+            csv_path.write_text("header1,header2,header3,header4\n", encoding="utf-8")
+            
+            self.assertIsNone(get_step_time_from_csv(str(csv_path)))
+
+    def test_get_step_time_from_csv_calculates_average_single_row(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "test.csv"
+            csv_path.write_text("""header1,header2,header3,header4,header5
+col1,col2,100.0,col4,col5
+""", encoding="utf-8")
+            
+            result = get_step_time_from_csv(str(csv_path))
+            self.assertIsNotNone(result)
+            self.assertAlmostEqual(result, 100.0)
+
+    def test_get_step_time_from_csv_calculates_average_multiple_rows(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "test.csv"
+            csv_path.write_text("""header1,header2,header3,header4,header5
+col1,col2,100.0,col4,col5
+col1,col2,200.0,col4,col5
+col1,col2,300.0,col4,col5
+""", encoding="utf-8")
+            
+            result = get_step_time_from_csv(str(csv_path))
+            self.assertIsNotNone(result)
+            self.assertAlmostEqual(result, 200.0)
+
+    def test_get_step_time_from_csv_returns_none_when_no_valid_rows(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "test.csv"
+            csv_path.write_text("""header1,header2,header3,header4,header5
+col1,col2
+col1,col2,abc,col4,col5
+""", encoding="utf-8")
+            
+            self.assertIsNone(get_step_time_from_csv(str(csv_path)))
 
 
 if __name__ == "__main__":

@@ -85,7 +85,6 @@ def run_profiler(
     avg_exec_time = find_and_parse_op_statistic(prof_output_dir)
     if avg_exec_time is not None:
         logger.info(f"Average execution time{run_name_str}: {avg_exec_time} us")
-        print(f"Average execution time{run_name_str}: {avg_exec_time} us")
     
     return prof_output_dir, avg_exec_time
 
@@ -135,17 +134,12 @@ def run_full_benchmark(
     passed, max_diff = precision_check(eager_result, graph_result, rtol=rtol, atol=atol)
     if passed:
         logger.info("Precision test result: Passed")
-        print("Precision test result: Passed")
     else:
         logger.error("Precision test result: Failed")
-        print("Precision test result: Failed")
         logger.error(f"Expected: {eager_result}")
-        print(f"Expected: {eager_result}")
         logger.error(f"Actual: {graph_result}")
-        print(f"Actual: {graph_result}")
         if max_diff is not None:
             logger.error(f"max diff: {max_diff}")
-            print(f"max diff: {max_diff}")
     
     results["precision_passed"] = passed
     results["eager_result"] = eager_result
@@ -163,7 +157,6 @@ def run_full_benchmark(
     results["eager_time"] = eager_time
     if eager_time is not None:
         logger.info(f"[eager] Average execution time: {eager_time} us")
-        print(f"[eager] Average execution time: {eager_time} us")
     
     _, compile_time = run_profiler(
         compile_func,
@@ -176,7 +169,6 @@ def run_full_benchmark(
     results["compile_time"] = compile_time
     if compile_time is not None:
         logger.info(f"[compile] Average execution time: {compile_time} us")
-        print(f"[compile] Average execution time: {compile_time} us")
     
     current_time = compile_time
     
@@ -184,22 +176,18 @@ def run_full_benchmark(
     if passed and current_time is not None and baseline_time is not None and baseline_time > 0:
         speedup = baseline_time / current_time
         logger.info(f"Speedup: {speedup:.4f}x")
-        print(f"Speedup: {speedup:.4f}x")
         results["speedup"] = speedup
     
     results["eager_time"] = eager_time
     results["compile_time"] = compile_time
     
     logger.info("\n=== Benchmark Summary ===")
-    print("\n=== Benchmark Summary ===")
     logger.info(f"Precision test: {'Passed' if passed else 'Failed'}")
-    print(f"Precision test: {'Passed' if passed else 'Failed'}")
     if eager_time is not None:
         logger.info(f"[eager] Average execution time: {eager_time} us")
     if compile_time is not None:
         logger.info(f"[compile] Average execution time: {compile_time} us")
     logger.info("========================")
-    print("========================")
     
     return results
 
@@ -251,17 +239,12 @@ def run_benchmark(
         passed, max_diff = precision_check(eager_result, graph_result, rtol=rtol, atol=atol)
         if passed:
             logger.info("Precision test result: Passed")
-            print("Precision test result: Passed")
         else:
             logger.error("Precision test result: Failed")
-            print("Precision test result: Failed")
             logger.error(f"Expected: {eager_result}")
-            print(f"Expected: {eager_result}")
             logger.error(f"Actual: {graph_result}")
-            print(f"Actual: {graph_result}")
             if max_diff is not None:
                 logger.error(f"max diff: {max_diff}")
-                print(f"max diff: {max_diff}")
         
         results["precision_passed"] = passed
         results["eager_result"] = eager_result

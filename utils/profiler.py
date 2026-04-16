@@ -44,9 +44,9 @@ def create_prof_output_dir(base_dir: str, unique_id: Optional[str] = None) -> Tu
     return output_dir, unique_id
 
 
-def get_avg_execution_time_from_csv(csv_path: str) -> Optional[float]:
+def get_step_time_from_csv(csv_path: str) -> Optional[float]:
     """
-    从op_statistic.csv文件中读取平均执行时间（倒数第三列）
+    从op_statistic.csv文件中读取第3列（索引2）的step算子计算时间，计算平均执行时间
     
     Args:
         csv_path: op_statistic.csv文件的完整路径
@@ -67,21 +67,31 @@ def get_avg_execution_time_from_csv(csv_path: str) -> Optional[float]:
                 logger.warning(f"CSV file has less than 2 rows: {csv_path}")
                 return None
             
-            values = rows[1]
+            total_time = 0.0
+            valid_rows = 0
             
-            if len(values) < 3:
-                logger.warning(f"CSV file has less than 3 columns: {csv_path}")
+            for i, values in enumerate(rows[1:], start=2):
+                if len(values) < 3:
+                    logger.warning(f"CSV row {i} has less than 3 columns, skipping")
+                    continue
+                
+                step_time_str = values[2]
+                
+                try:
+                    step_time = float(step_time_str)
+                    total_time += step_time
+                    valid_rows += 1
+                except ValueError:
+                    logger.warning(f"Cannot convert '{step_time_str}' to float in row {i}, skipping")
+                    continue
+            
+            if valid_rows == 0:
+                logger.warning(f"No valid data rows found in CSV: {csv_path}")
                 return None
             
-            avg_time_str = values[-3]
-            
-            try:
-                avg_time = float(avg_time_str)
-                logger.info(f"Average execution time: {avg_time}")
-                return avg_time
-            except ValueError:
-                logger.warning(f"Cannot convert '{avg_time_str}' to float")
-                return None
+            avg_time = total_time / valid_rows
+            logger.info(f"Average step execution time: {avg_time} (sum of {valid_rows} rows: {total_time})")
+            return avg_time
                 
     except Exception as e:
         logger.error(f"Error reading CSV file {csv_path}: {e}")
@@ -111,7 +121,7 @@ def find_and_parse_op_statistic(prof_output_dir: str) -> Optional[float]:
             return None
     
     logger.info(f"Found op_statistic.csv at: {csv_path}")
-    return get_avg_execution_time_from_csv(csv_path)
+    return get_step_time_from_csv(csv_path)
 
 
 def setup_profiler_output(base_prof_dir: str, print_log: bool = True) -> str:
