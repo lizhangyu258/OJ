@@ -3,6 +3,7 @@ import subprocess
 import json
 import glob
 import logging
+import argparse
 
 from utils.judge import build_empty_result
 from utils.judge import generate_final_result
@@ -100,8 +101,15 @@ def run_testcase(testcase_file):
             'error_file': error_file
         }
 
-# 主函数
+
 def main():
+    parser = argparse.ArgumentParser(description='OJ Case Judge')
+    parser.add_argument('--use-baseline-eager', action='store_true', default=True,
+                        help='Use eager as performance baseline')
+    parser.add_argument('--use-baseline-compile', action='store_false', dest='use_baseline_eager',
+                        help='Use compile as performance baseline')
+    args = parser.parse_args()
+
     logger.info("Starting case evaluation...")
     
     # 创建输出目录
@@ -124,9 +132,12 @@ def main():
     
     # 生成最终结果
     baseline_data = load_baseline_data(BASELINE_DATA_FILE)
-    final_result = generate_final_result(testcase_results, baseline_data)
+    final_result = generate_final_result(
+        testcase_results,
+        baseline_data,
+        use_baseline_eager=args.use_baseline_eager
+    )
     
-    # 打印结果（用于外部程序获取）
     print(json.dumps(final_result, indent=2))
     
     logger.info("Case evaluation completed")

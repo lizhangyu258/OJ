@@ -1,7 +1,10 @@
 import os
+import logging
 import uuid
 import csv
 from typing import Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 def get_default_prof_dir() -> str:
@@ -52,7 +55,7 @@ def get_avg_execution_time_from_csv(csv_path: str) -> Optional[float]:
         平均执行时间（float），如果读取失败则返回None
     """
     if not os.path.exists(csv_path):
-        print(f"Warning: CSV file not found: {csv_path}")
+        logger.warning(f"CSV file not found: {csv_path}")
         return None
     
     try:
@@ -61,27 +64,27 @@ def get_avg_execution_time_from_csv(csv_path: str) -> Optional[float]:
             rows = list(reader)
             
             if len(rows) < 2:
-                print(f"Warning: CSV file has less than 2 rows: {csv_path}")
+                logger.warning(f"CSV file has less than 2 rows: {csv_path}")
                 return None
             
             values = rows[1]
             
             if len(values) < 3:
-                print(f"Warning: CSV file has less than 3 columns: {csv_path}")
+                logger.warning(f"CSV file has less than 3 columns: {csv_path}")
                 return None
             
             avg_time_str = values[-3]
             
             try:
                 avg_time = float(avg_time_str)
-                print(f"Average execution time: {avg_time}")
+                logger.info(f"Average execution time: {avg_time}")
                 return avg_time
             except ValueError:
-                print(f"Warning: Cannot convert '{avg_time_str}' to float")
+                logger.warning(f"Cannot convert '{avg_time_str}' to float")
                 return None
                 
     except Exception as e:
-        print(f"Error reading CSV file {csv_path}: {e}")
+        logger.error(f"Error reading CSV file {csv_path}: {e}")
         return None
 
 
@@ -104,10 +107,10 @@ def find_and_parse_op_statistic(prof_output_dir: str) -> Optional[float]:
                 csv_path = os.path.join(root, csv_filename)
                 break
         else:
-            print(f"Warning: {csv_filename} not found in {prof_output_dir}")
+            logger.warning(f"{csv_filename} not found in {prof_output_dir}")
             return None
     
-    print(f"Found op_statistic.csv at: {csv_path}")
+    logger.info(f"Found op_statistic.csv at: {csv_path}")
     return get_avg_execution_time_from_csv(csv_path)
 
 
@@ -127,7 +130,7 @@ def setup_profiler_output(base_prof_dir: str, print_log: bool = True) -> str:
     output_dir, unique_id = create_prof_output_dir(base_prof_dir)
     
     if print_log:
-        print(f"Profiler output directory: {output_dir}")
-        print(f"Unique ID: {unique_id}")
+        logger.info(f"Profiler output directory: {output_dir}")
+        logger.info(f"Unique ID: {unique_id}")
     
     return output_dir
