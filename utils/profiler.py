@@ -98,9 +98,9 @@ def get_step_time_from_csv(csv_path: str) -> Optional[float]:
         return None
 
 
-def find_and_parse_op_statistic(prof_output_dir: str) -> Optional[float]:
+def find_and_parse_step_trace(prof_output_dir: str) -> Optional[float]:
     """
-    在prof输出目录中查找op_statistic.csv并解析平均执行时间
+    在prof输出目录中查找step_trace_time.csv并解析平均执行时间
     
     Args:
         prof_output_dir: profiler输出目录
@@ -108,7 +108,7 @@ def find_and_parse_op_statistic(prof_output_dir: str) -> Optional[float]:
     Returns:
         平均执行时间（float），如果找不到或解析失败则返回None
     """
-    csv_filename = "op_statistic.csv"
+    csv_filename = "step_trace_time.csv"
     csv_path = os.path.join(prof_output_dir, csv_filename)
     
     if not os.path.exists(csv_path):
@@ -120,7 +120,7 @@ def find_and_parse_op_statistic(prof_output_dir: str) -> Optional[float]:
             logger.warning(f"{csv_filename} not found in {prof_output_dir}")
             return None
     
-    logger.info(f"Found op_statistic.csv at: {csv_path}")
+    logger.info(f"Found step_trace_time.csv at: {csv_path}")
     return get_step_time_from_csv(csv_path)
 
 

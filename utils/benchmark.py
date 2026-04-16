@@ -5,7 +5,7 @@ import torch_npu
 from torch._inductor.utils import run_and_get_code
 from typing import Any, Callable, Optional, Tuple
 
-from utils.profiler import setup_profiler_output, find_and_parse_op_statistic, get_default_prof_dir
+from utils.profiler import setup_profiler_output, find_and_parse_step_trace, get_default_prof_dir
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ def run_profiler(
     
     run_name_str = f" ({run_name})" if run_name else ""
     logger.info(f"\nProfiler results{run_name_str} saved to: {prof_output_dir}")
-    avg_exec_time = find_and_parse_op_statistic(prof_output_dir)
+    avg_exec_time = find_and_parse_step_trace(prof_output_dir)
     if avg_exec_time is not None:
         logger.info(f"Average execution time{run_name_str}: {avg_exec_time} us")
     
