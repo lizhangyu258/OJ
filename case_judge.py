@@ -104,10 +104,6 @@ def run_testcase(testcase_file):
 
 def main():
     parser = argparse.ArgumentParser(description='OJ Case Judge')
-    parser.add_argument('--use-baseline-eager', action='store_true', default=True,
-                        help='Use eager as performance baseline')
-    parser.add_argument('--use-baseline-compile', action='store_false', dest='use_baseline_eager',
-                        help='Use compile as performance baseline')
     args = parser.parse_args()
 
     logger.info("Starting case evaluation...")
@@ -133,8 +129,7 @@ def main():
     baseline_data = load_baseline_data(BASELINE_DATA_FILE)
     final_result = generate_final_result(
         testcase_results,
-        baseline_data,
-        use_baseline_eager=args.use_baseline_eager
+        baseline_data
     )
     
     logger.info(f"final_result json: {json.dumps(final_result, indent=2)}")

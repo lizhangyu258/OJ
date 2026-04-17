@@ -98,8 +98,7 @@ def run_full_benchmark(
     exec_steps: int = 10,
     rtol: float = 1e-5,
     atol: float = 1e-5,
-    prof_config=None,
-    use_baseline_eager: bool = True
+    prof_config=None
 ) -> dict:
     setup_environment()
     
@@ -158,6 +157,8 @@ def run_full_benchmark(
     if eager_time is not None:
         logger.info(f"[eager] Average execution time: {eager_time} us")
     
+    # TODO: 实现compile_time与current_time的程序来源切换逻辑
+    # 当前 compile_time 应使用 CANN 包标准安装目录下的 bishengir-compile/bishengir-opt 被测程序
     _, compile_time = run_profiler(
         compile_func,
         inputs,
@@ -170,16 +171,28 @@ def run_full_benchmark(
     if compile_time is not None:
         logger.info(f"[compile] Average execution time: {compile_time} us")
     
-    current_time = compile_time
+    # TODO: 实现compile_time与current_time的程序来源切换逻辑
+    # 当前 current_time 应使用用户上传的被测程序
+    _, current_time = run_profiler(
+        compile_func,
+        inputs,
+        warmup_steps,
+        exec_steps,
+        prof_config,
+        "current"
+    )
+    results["current_time"] = current_time
+    if current_time is not None:
+        logger.info(f"[current] Average execution time: {current_time} us")
     
-    baseline_time = eager_time if use_baseline_eager else compile_time
-    if passed and current_time is not None and baseline_time is not None and baseline_time > 0:
-        speedup = baseline_time / current_time
+    if passed and current_time is not None and compile_time is not None and compile_time > 0:
+        speedup = compile_time / current_time
         logger.info(f"Speedup: {speedup:.4f}x")
         results["speedup"] = speedup
     
     results["eager_time"] = eager_time
     results["compile_time"] = compile_time
+    results["current_time"] = current_time
     
     logger.info("\n=== Benchmark Summary ===")
     logger.info(f"Precision test: {'Passed' if passed else 'Failed'}")
@@ -187,6 +200,8 @@ def run_full_benchmark(
         logger.info(f"[eager] Average execution time: {eager_time} us")
     if compile_time is not None:
         logger.info(f"[compile] Average execution time: {compile_time} us")
+    if current_time is not None:
+        logger.info(f"[current] Average execution time: {current_time} us")
     logger.info("========================")
     
     return results

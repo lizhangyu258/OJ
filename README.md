@@ -161,7 +161,7 @@ print(codes[0])
 可以使用 `unittest` 运行核心逻辑测试：
 
 ```bash
-python3 -m unittest discover -s tests
+python3 -m unittest discover -s unittests
 ```
 
 ## 注意事项

@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 FUNCTIONAL_PASS_TOKEN = "Precision test result: Passed"
 EAGER_TIME_PATTERN = re.compile(r"\[eager\] Average execution time:\s*([\d.]+)\s*us")
 COMPILE_TIME_PATTERN = re.compile(r"\[compile\] Average execution time:\s*([\d.]+)\s*us")
+CURRENT_TIME_PATTERN = re.compile(r"\[current\] Average execution time:\s*([\d.]+)\s*us")
 
 
 def load_baseline_data(baseline_data_file):
@@ -21,12 +22,13 @@ def is_functional_test_passed(stdout):
 
 
 def parse_testcase_output(testcase_result):
-    """Parse testcase output and extract performance metrics (eager and compile)."""
+    """Parse testcase output and extract performance metrics (eager, compile, and current)."""
     stdout = testcase_result.get("stdout", "")
     parsed_data = {
         "functional_passed": is_functional_test_passed(stdout),
         "eager_time": None,
         "compile_time": None,
+        "current_time": None,
     }
 
     match_eager = EAGER_TIME_PATTERN.search(stdout)
@@ -43,21 +45,33 @@ def parse_testcase_output(testcase_result):
         except ValueError:
             logger.warning("Failed to parse compile_time from: %s", match_compile.group(1))
 
-    logger.info("Parsed testcase - functional_passed: %s, eager_time: %s us, compile_time: %s us",
-                parsed_data["functional_passed"], parsed_data["eager_time"], parsed_data["compile_time"])
+    match_current = CURRENT_TIME_PATTERN.search(stdout)
+    if match_current:
+        try:
+            parsed_data["current_time"] = float(match_current.group(1))
+        except ValueError:
+            logger.warning("Failed to parse current_time from: %s", match_current.group(1))
+
+    logger.info("Parsed testcase - functional_passed: %s, eager_time: %s us, compile_time: %s us, current_time: %s us",
+                parsed_data["functional_passed"], parsed_data["eager_time"], parsed_data["compile_time"], parsed_data["current_time"])
     return parsed_data
 
 
-def calculate_testcase_score(testcase_result, parsed_output, baseline_data, use_baseline_eager=True):
+def calculate_testcase_score(testcase_result, parsed_output, baseline_data):
     """
-    Calculate testcase speedup based on the parsed output using dynamically collected eager and compile.
-    Returns the speedup ratio r_i = baseline / current, where current is compile_time.
+    Calculate testcase performance metrics based on the parsed output.
+    Returns s_i (performance term) and b1_i (eager time for weight calculation).
+    According to the score.md document:
+    - s_i = (b2_i / current_i) * I_i, where I_i is 1 if functional_passed else 0
+    - b1_i is eager_time (for weight calculation)
+    - b2_i is compile_time (baseline for performance ratio)
+    - current_i is current_time (user's implementation)
     """
     testcase_name = testcase_result["testcase"]
 
     if testcase_result["exit_code"] != 0:
         logger.error(
-            "Test case %s failed with exit code %s, speedup: 0.0",
+            "Test case %s failed with exit code %s, s_i: 0.0",
             testcase_name,
             testcase_result["exit_code"],
         )
@@ -66,71 +80,72 @@ def calculate_testcase_score(testcase_result, parsed_output, baseline_data, use_
     functional_passed = parsed_output.get("functional_passed", False)
     eager_time = parsed_output.get("eager_time")
     compile_time = parsed_output.get("compile_time")
+    current_time = parsed_output.get("current_time")
+
+    I_i = 1.0 if functional_passed else 0.0
 
     if not functional_passed:
-        logger.error("Test case %s functional test failed, speedup: 0.0", testcase_name)
-        return 0.0, 0.0
+        logger.error("Test case %s functional test failed, s_i: 0.0", testcase_name)
+        return 0.0, eager_time if eager_time is not None else 0.0
 
     if compile_time is None or compile_time <= 0:
-        logger.error("Invalid compile_time for %s, speedup: 0.0", testcase_name)
-        return 0.0, 0.0
+        logger.error("Invalid compile_time (b2_i) for %s, s_i: 0.0", testcase_name)
+        return 0.0, eager_time if eager_time is not None else 0.0
 
-    baseline_time = eager_time if use_baseline_eager else compile_time
-    if baseline_time is None or baseline_time <= 0:
-        logger.error("Invalid baseline time for %s, speedup: 0.0", testcase_name)
-        return 0.0, 0.0
+    if current_time is None or current_time <= 0:
+        logger.error("Invalid current_time for %s, s_i: 0.0", testcase_name)
+        return 0.0, eager_time if eager_time is not None else 0.0
 
-    speedup_ratio = baseline_time / compile_time
+    s_i = (compile_time / current_time) * I_i
     logger.info(
-        "Speedup ratio for %s: %.4f (baseline: %s us, current: %s us, use_eager: %s)",
+        "Performance term for %s: %.4f (b2_i: %s us, current_i: %s us, I_i: %s)",
         testcase_name,
-        speedup_ratio,
-        baseline_time,
+        s_i,
         compile_time,
-        use_baseline_eager,
+        current_time,
+        I_i,
     )
 
-    return speedup_ratio, eager_time if eager_time is not None else 0.0
+    return s_i, eager_time if eager_time is not None else 0.0
 
 
-def generate_final_result(testcase_results, baseline_data, now=None, use_baseline_eager=True):
-    """Generate the final result from all testcase results with dynamic baseline collection."""
+def generate_final_result(testcase_results, baseline_data, now=None):
+    """Generate the final result from all testcase results according to score.md."""
     timestamp = (now or datetime.now()).isoformat()
     all_passed = all(result["exit_code"] == 0 for result in testcase_results)
     verdict = "AC" if all_passed else "WA"
 
     parsed_outputs = []
-    testcase_speedups = []
-    testcase_weights = []
-    functional_indicators = []
+    testcase_s_i = []  # s_i for each test case
+    testcase_b1_i = []  # b1_i (eager_time) for weight calculation
+    functional_indicators = []  # I_i for each test case
 
-    total_eager = 0.0
+    total_b1 = 0.0  # sum of b1_i (eager_time) for all test cases
 
     for result in testcase_results:
         parsed_output = parse_testcase_output(result)
-        speedup, eager_time = calculate_testcase_score(
-            result, parsed_output, baseline_data, use_baseline_eager=use_baseline_eager
-        )
+        s_i, b1_i = calculate_testcase_score(result, parsed_output, baseline_data)
 
         parsed_outputs.append(parsed_output)
-        testcase_speedups.append(speedup)
-        testcase_weights.append(eager_time)
+        testcase_s_i.append(s_i)
+        testcase_b1_i.append(b1_i)
         I_i = 1.0 if parsed_output.get("functional_passed", False) else 0.0
         functional_indicators.append(I_i)
 
-        if eager_time is not None:
-            total_eager += eager_time
+        if b1_i is not None:
+            total_b1 += b1_i
 
     n = len(testcase_results)
     F = sum(functional_indicators) / n if n > 0 else 0.0
 
-    sum_I_w = 0.0
-    sum_I_w_s = 0.0
+    sum_I_w = 0.0  # sum I_i * w_i
+    sum_I_w_s = 0.0  # sum I_i * w_i * s_i
 
     for i in range(n):
         I_i = functional_indicators[i]
-        w_i = testcase_weights[i] / total_eager if total_eager > 0 else 0.0
-        s_i = testcase_speedups[i]
+        b1_i = testcase_b1_i[i]
+        w_i = b1_i / total_b1 if total_b1 > 0 else 0.0  # w_i = b1_i / sum(b1_j)
+        s_i = testcase_s_i[i]
 
         sum_I_w += I_i * w_i
         sum_I_w_s += I_i * w_i * s_i
@@ -147,16 +162,16 @@ def generate_final_result(testcase_results, baseline_data, now=None, use_baselin
         "functional_score": F,
         "performance_score": P,
         "final_score": S,
-        "use_baseline_eager": use_baseline_eager,
         "testcase_details": [
             {
                 "testcase": result["testcase"],
                 "exit_code": result["exit_code"],
                 "functional_passed": parsed_outputs[index].get("functional_passed", False),
-                "speedup": testcase_speedups[index],
+                "s_i": testcase_s_i[index],
                 "eager_time": parsed_outputs[index].get("eager_time"),
                 "compile_time": parsed_outputs[index].get("compile_time"),
-                "weight": testcase_weights[index] / total_eager if total_eager > 0 else 0.0,
+                "current_time": parsed_outputs[index].get("current_time"),
+                "weight": testcase_b1_i[index] / total_b1 if total_b1 > 0 else 0.0,
             }
             for index, result in enumerate(testcase_results)
         ],

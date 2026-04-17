@@ -30,6 +30,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
             "stdout": """Precision test result: Passed
 [eager] Average execution time: 100.0 us
 [compile] Average execution time: 50.0 us
+[current] Average execution time: 40.0 us
 """,
         }
 
@@ -38,6 +39,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
         self.assertTrue(parsed["functional_passed"])
         self.assertEqual(parsed["eager_time"], 100.0)
         self.assertEqual(parsed["compile_time"], 50.0)
+        self.assertEqual(parsed["current_time"], 40.0)
 
     def test_parse_testcase_output_handles_missing_times(self):
         testcase_result = {
@@ -48,6 +50,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
 
         self.assertIsNone(parsed["eager_time"])
         self.assertIsNone(parsed["compile_time"])
+        self.assertIsNone(parsed["current_time"])
         self.assertFalse(parsed["functional_passed"])
 
     def test_load_baseline_data_returns_empty_dict_when_file_missing(self):
@@ -66,47 +69,33 @@ class CaseJudgeCoreTests(unittest.TestCase):
 
     def test_calculate_testcase_score_returns_zero_when_exit_code_non_zero(self):
         testcase_result = {"testcase": "case1.py", "exit_code": 1}
-        parsed_output = {"eager_time": 100.0, "compile_time": 50.0, "functional_passed": True}
+        parsed_output = {"eager_time": 100.0, "compile_time": 50.0, "current_time": 40.0, "functional_passed": True}
         baseline_data = {}
 
-        speedup, weight = calculate_testcase_score(testcase_result, parsed_output, baseline_data)
+        s_i, b1_i = calculate_testcase_score(testcase_result, parsed_output, baseline_data)
 
-        self.assertEqual(speedup, 0.0)
-        self.assertEqual(weight, 0.0)
+        self.assertEqual(s_i, 0.0)
+        self.assertEqual(b1_i, 0.0)
 
     def test_calculate_testcase_score_returns_zero_when_functional_failed(self):
         testcase_result = {"testcase": "case1.py", "exit_code": 0}
-        parsed_output = {"eager_time": 100.0, "compile_time": 50.0, "functional_passed": False}
+        parsed_output = {"eager_time": 100.0, "compile_time": 50.0, "current_time": 40.0, "functional_passed": False}
         baseline_data = {}
 
-        speedup, weight = calculate_testcase_score(testcase_result, parsed_output, baseline_data)
+        s_i, b1_i = calculate_testcase_score(testcase_result, parsed_output, baseline_data)
 
-        self.assertEqual(speedup, 0.0)
-        self.assertEqual(weight, 0.0)
+        self.assertEqual(s_i, 0.0)
+        self.assertEqual(b1_i, 100.0)
 
-    def test_calculate_testcase_score_returns_speedup_using_eager(self):
+    def test_calculate_testcase_score_returns_s_i_according_to_formula(self):
         testcase_result = {"testcase": "case1.py", "exit_code": 0}
-        parsed_output = {"eager_time": 100.0, "compile_time": 40.0, "functional_passed": True}
+        parsed_output = {"eager_time": 100.0, "compile_time": 50.0, "current_time": 40.0, "functional_passed": True}
         baseline_data = {}
 
-        speedup, weight = calculate_testcase_score(
-            testcase_result, parsed_output, baseline_data, use_baseline_eager=True
-        )
+        s_i, b1_i = calculate_testcase_score(testcase_result, parsed_output, baseline_data)
 
-        self.assertEqual(speedup, 2.5)
-        self.assertEqual(weight, 100.0)
-
-    def test_calculate_testcase_score_returns_speedup_using_compile(self):
-        testcase_result = {"testcase": "case1.py", "exit_code": 0}
-        parsed_output = {"eager_time": 100.0, "compile_time": 40.0, "functional_passed": True}
-        baseline_data = {}
-
-        speedup, weight = calculate_testcase_score(
-            testcase_result, parsed_output, baseline_data, use_baseline_eager=False
-        )
-
-        self.assertEqual(speedup, 1.0)
-        self.assertEqual(weight, 100.0)
+        self.assertEqual(s_i, 50.0 / 40.0)
+        self.assertEqual(b1_i, 100.0)
 
     def test_generate_final_result_with_full_scoring_mechanism(self):
         testcase_results = [
@@ -116,6 +105,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
                 "stdout": """Precision test result: Passed
 [eager] Average execution time: 100.0 us
 [compile] Average execution time: 50.0 us
+[current] Average execution time: 40.0 us
 """,
                 "stderr": "",
             },
@@ -125,6 +115,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
                 "stdout": """Precision test result: Passed
 [eager] Average execution time: 200.0 us
 [compile] Average execution time: 100.0 us
+[current] Average execution time: 50.0 us
 """,
                 "stderr": "",
             },
@@ -139,20 +130,21 @@ class CaseJudgeCoreTests(unittest.TestCase):
         now = datetime(2026, 4, 16, 12, 0, 0)
 
         final_result = generate_final_result(
-            testcase_results, baseline_data, now=now, use_baseline_eager=True
+            testcase_results, baseline_data, now=now
         )
 
         self.assertEqual(final_result["verdict"], "WA")
-        expected_final = 0.4 * (2/3) + 0.6 * 2.0
+        expected_final = 0.4 * (2/3) + 0.6 * (( (100/300)*(50/40) + (200/300)*(100/50) ) / (100/300 + 200/300))
         self.assertAlmostEqual(final_result["rank"]["rank"], expected_final)
         self.assertEqual(final_result["detail"]["timestamp"], now.isoformat())
         self.assertEqual(final_result["detail"]["passed_testcases"], 2)
         self.assertEqual(final_result["detail"]["failed_testcases"], 1)
         self.assertEqual(final_result["detail"]["functional_score"], 2/3)
-        self.assertAlmostEqual(final_result["detail"]["performance_score"], 2.0)
-        self.assertEqual(final_result["detail"]["testcase_details"][0]["speedup"], 2.0)
-        self.assertEqual(final_result["detail"]["testcase_details"][1]["speedup"], 2.0)
-        self.assertEqual(final_result["detail"]["testcase_details"][2]["speedup"], 0.0)
+        expected_performance = (( (100/300)*(50/40) + (200/300)*(100/50) ) / (100/300 + 200/300))
+        self.assertAlmostEqual(final_result["detail"]["performance_score"], expected_performance)
+        self.assertEqual(final_result["detail"]["testcase_details"][0]["s_i"], 50.0/40.0)
+        self.assertEqual(final_result["detail"]["testcase_details"][1]["s_i"], 100.0/50.0)
+        self.assertEqual(final_result["detail"]["testcase_details"][2]["s_i"], 0.0)
 
     def test_generate_final_result_with_weighted_average(self):
         testcase_results = [
@@ -162,6 +154,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
                 "stdout": """Precision test result: Passed
 [eager] Average execution time: 100.0 us
 [compile] Average execution time: 50.0 us
+[current] Average execution time: 40.0 us
 """,
                 "stderr": "",
             },
@@ -171,6 +164,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
                 "stdout": """Precision test result: Passed
 [eager] Average execution time: 300.0 us
 [compile] Average execution time: 100.0 us
+[current] Average execution time: 50.0 us
 """,
                 "stderr": "",
             },
@@ -179,10 +173,10 @@ class CaseJudgeCoreTests(unittest.TestCase):
         now = datetime(2026, 4, 16, 12, 0, 0)
 
         final_result = generate_final_result(
-            testcase_results, baseline_data, now=now, use_baseline_eager=True
+            testcase_results, baseline_data, now=now
         )
 
-        expected_performance = (0.25 * 2.0 + 0.75 * 3.0) / (0.25 + 0.75)
+        expected_performance = ( (0.25 * 1.25 + 0.75 * 2.0) / (0.25 + 0.75) )
         self.assertAlmostEqual(final_result["detail"]["performance_score"], expected_performance)
         expected_final = 0.4 * 1.0 + 0.6 * expected_performance
         self.assertAlmostEqual(final_result["rank"]["rank"], expected_final)
