@@ -120,9 +120,6 @@ def run_profiler(
     run_name_str = f" ({run_name})" if run_name else ""
     logger.info(f"\nProfiler results{run_name_str} saved to: {prof_output_dir}")
     avg_exec_time = find_and_parse_step_trace(prof_output_dir)
-    if avg_exec_time is not None:
-        logger.info(f"Average execution time{run_name_str}: {avg_exec_time} us")
-    
     return prof_output_dir, avg_exec_time
 
 
@@ -205,11 +202,8 @@ def benchmark(
         "current"
     )
     results["current_time"] = current_time
-    if current_time is not None:
-        logger.info(f"[current] Average execution time: {current_time} us")
-    
-    if passed and current_time is not None and compile_time is not None and compile_time > 0:
-        speedup = compile_time / current_time
+    if passed and eager_time is not None and compile_time is not None and compile_time > 0 and eager_time > 0:
+        speedup = eager_time / compile_time
         logger.info(f"Speedup: {speedup:.4f}x")
         results["speedup"] = speedup
     
