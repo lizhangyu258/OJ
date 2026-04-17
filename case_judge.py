@@ -6,7 +6,6 @@ import logging
 import signal
 from contextlib import contextmanager
 
-from utils.judge import build_serializable_benchmark_result
 from utils.judge import build_empty_result
 from utils.judge import generate_final_result
 from utils.judge import load_baseline_data
@@ -45,6 +44,28 @@ def load_testcase_module(testcase_file):
     return module
 
 
+def validate_benchmark_result(raw_result, testcase_name):
+    if raw_result is None:
+        raise ValueError(
+            f"Testcase {testcase_name} main() returned None. "
+            "Ensure main() returns the result of benchmark(...)."
+        )
+    if not isinstance(raw_result, dict):
+        raise TypeError(
+            f"Testcase {testcase_name} main() returned {type(raw_result).__name__}, expected dict."
+        )
+
+    required_keys = {"precision_passed", "eager_time", "compile_time", "current_time"}
+    missing_keys = sorted(required_keys - raw_result.keys())
+    if missing_keys:
+        raise ValueError(
+            f"Testcase {testcase_name} returned an incomplete benchmark result, "
+            f"missing keys: {', '.join(missing_keys)}"
+        )
+
+    return raw_result
+
+
 class TestcaseTimeoutError(TimeoutError):
     """Raised when a testcase exceeds the configured execution timeout."""
 
@@ -79,14 +100,12 @@ def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS):
             if not hasattr(module, 'main'):
                 raise AttributeError(f"Testcase {testcase_name} does not define main()")
 
-            benchmark_result = build_serializable_benchmark_result(module.main())
-        if benchmark_result is None:
-            raise ValueError(f"Testcase {testcase_name} returned no benchmark result")
+            raw_result = validate_benchmark_result(module.main(), testcase_name)
 
         result = {
             'testcase': testcase_name,
             'exit_code': 0,
-            'benchmark_result': benchmark_result,
+            'raw_result': raw_result,
             'error_message': '',
         }
         logger.info(f"Test case {testcase_name} completed successfully")
@@ -97,7 +116,7 @@ def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS):
         return {
             'testcase': testcase_name,
             'exit_code': -1,
-            'benchmark_result': None,
+            'raw_result': None,
             'error_message': error_message,
         }
     except Exception as e:
@@ -105,7 +124,7 @@ def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS):
         return {
             'testcase': testcase_name,
             'exit_code': 1,
-            'benchmark_result': None,
+            'raw_result': None,
             'error_message': str(e),
         }
 

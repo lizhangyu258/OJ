@@ -9,46 +9,18 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from case_judge import run_testcase
 from utils.judge import build_empty_result
-from utils.judge import build_serializable_benchmark_result
 from utils.judge import calculate_testcase_score
+from utils.judge import extract_testcase_metrics
 from utils.judge import generate_final_result
 from utils.judge import load_baseline_data
-from utils.judge import parse_testcase_output
 from utils.profiler import get_step_time_from_csv
 from utils.profiler import resolve_output_dir
 from utils.profiler import setup_profiler_output
 
 
 class CaseJudgeCoreTests(unittest.TestCase):
-    def test_parse_testcase_output_extracts_metrics_from_benchmark_result(self):
-        testcase_result = {
-            "benchmark_result": {
-                "precision_passed": True,
-                "eager_time": 100.0,
-                "compile_time": 50.0,
-                "current_time": 40.0,
-            },
-        }
-
-        parsed = parse_testcase_output(testcase_result)
-
-        self.assertTrue(parsed["functional_passed"])
-        self.assertEqual(parsed["eager_time"], 100.0)
-        self.assertEqual(parsed["compile_time"], 50.0)
-        self.assertEqual(parsed["current_time"], 40.0)
-
-    def test_parse_testcase_output_handles_missing_benchmark_result(self):
-        testcase_result = {}
-
-        parsed = parse_testcase_output(testcase_result)
-
-        self.assertIsNone(parsed["eager_time"])
-        self.assertIsNone(parsed["compile_time"])
-        self.assertIsNone(parsed["current_time"])
-        self.assertFalse(parsed["functional_passed"])
-
-    def test_build_serializable_benchmark_result_keeps_required_fields(self):
-        benchmark_result = {
+    def test_extract_testcase_metrics_reads_required_fields_from_raw_result(self):
+        raw_result = {
             "precision_passed": True,
             "eager_time": 100,
             "compile_time": "50.0",
@@ -58,36 +30,25 @@ class CaseJudgeCoreTests(unittest.TestCase):
             "compile_out": object(),
         }
 
-        summary = build_serializable_benchmark_result(benchmark_result)
+        metrics = extract_testcase_metrics(raw_result)
 
         self.assertEqual(
-            summary,
+            metrics,
             {
-                "precision_passed": True,
+                "functional_passed": True,
                 "eager_time": 100.0,
                 "compile_time": 50.0,
                 "current_time": 40.0,
-                "max_diff": None,
-                "speedup": 2.5,
             },
         )
 
-    def test_parse_testcase_output_uses_benchmark_result(self):
-        testcase_result = {
-            "benchmark_result": {
-                "precision_passed": True,
-                "eager_time": 100.0,
-                "compile_time": 50.0,
-                "current_time": 40.0,
-            },
-        }
+    def test_extract_testcase_metrics_handles_missing_raw_result(self):
+        metrics = extract_testcase_metrics(None)
 
-        parsed = parse_testcase_output(testcase_result)
-
-        self.assertTrue(parsed["functional_passed"])
-        self.assertEqual(parsed["eager_time"], 100.0)
-        self.assertEqual(parsed["compile_time"], 50.0)
-        self.assertEqual(parsed["current_time"], 40.0)
+        self.assertFalse(metrics["functional_passed"])
+        self.assertIsNone(metrics["eager_time"])
+        self.assertIsNone(metrics["compile_time"])
+        self.assertIsNone(metrics["current_time"])
 
     def test_load_baseline_data_returns_empty_dict_when_file_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -138,7 +99,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
             {
                 "testcase": "case1.py",
                 "exit_code": 0,
-                "benchmark_result": {
+                "raw_result": {
                     "precision_passed": True,
                     "eager_time": 100.0,
                     "compile_time": 50.0,
@@ -148,7 +109,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
             {
                 "testcase": "case2.py",
                 "exit_code": 0,
-                "benchmark_result": {
+                "raw_result": {
                     "precision_passed": True,
                     "eager_time": 200.0,
                     "compile_time": 100.0,
@@ -158,7 +119,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
             {
                 "testcase": "case3.py",
                 "exit_code": 1,
-                "benchmark_result": None,
+                "raw_result": None,
             },
         ]
         baseline_data = {}
@@ -186,7 +147,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
             {
                 "testcase": "case1.py",
                 "exit_code": 0,
-                "benchmark_result": {
+                "raw_result": {
                     "precision_passed": True,
                     "eager_time": 100.0,
                     "compile_time": 50.0,
@@ -196,7 +157,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
             {
                 "testcase": "case2.py",
                 "exit_code": 0,
-                "benchmark_result": {
+                "raw_result": {
                     "precision_passed": True,
                     "eager_time": 300.0,
                     "compile_time": 100.0,
@@ -221,12 +182,12 @@ class CaseJudgeCoreTests(unittest.TestCase):
             {
                 "testcase": "case1.py",
                 "exit_code": 1,
-                "benchmark_result": None,
+                "raw_result": None,
             },
             {
                 "testcase": "case2.py",
                 "exit_code": 0,
-                "benchmark_result": {
+                "raw_result": {
                     "precision_passed": False,
                     "eager_time": None,
                     "compile_time": None,
@@ -248,7 +209,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
             {
                 "testcase": "case1.py",
                 "exit_code": 0,
-                "benchmark_result": {
+                "raw_result": {
                     "precision_passed": False,
                     "eager_time": 100.0,
                     "compile_time": 50.0,
@@ -263,7 +224,21 @@ class CaseJudgeCoreTests(unittest.TestCase):
         self.assertEqual(final_result["detail"]["passed_testcases"], 0)
         self.assertEqual(final_result["detail"]["failed_testcases"], 1)
 
-    def test_run_testcase_calls_main_directly_and_returns_benchmark_result(self):
+    def test_generate_final_result_includes_error_message(self):
+        testcase_results = [
+            {
+                "testcase": "case1.py",
+                "exit_code": 1,
+                "raw_result": None,
+                "error_message": "main() returned None",
+            }
+        ]
+
+        final_result = generate_final_result(testcase_results, {}, now=datetime(2026, 4, 16, 12, 0, 0))
+
+        self.assertEqual(final_result["detail"]["testcase_details"][0]["error_message"], "main() returned None")
+
+    def test_run_testcase_calls_main_directly_and_returns_raw_result(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             testcase_path = Path(temp_dir) / "temp_case.py"
             testcase_path.write_text(
@@ -282,14 +257,12 @@ class CaseJudgeCoreTests(unittest.TestCase):
 
         self.assertEqual(result["exit_code"], 0)
         self.assertEqual(
-            result["benchmark_result"],
+            result["raw_result"],
             {
                 "precision_passed": True,
                 "eager_time": 100.0,
                 "compile_time": 50.0,
                 "current_time": 40.0,
-                "max_diff": None,
-                "speedup": None,
             },
         )
         self.assertEqual(result["error_message"], "")
@@ -307,8 +280,29 @@ class CaseJudgeCoreTests(unittest.TestCase):
             result = run_testcase(str(testcase_path))
 
         self.assertEqual(result["exit_code"], 1)
-        self.assertIsNone(result["benchmark_result"])
+        self.assertIsNone(result["raw_result"])
         self.assertEqual(result["error_message"], "boom")
+
+    def test_run_testcase_reports_missing_return_clearly(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            testcase_path = Path(temp_dir) / "temp_case.py"
+            testcase_path.write_text(
+                """def main():
+    result = {
+        "precision_passed": True,
+        "eager_time": 100.0,
+        "compile_time": 50.0,
+        "current_time": 40.0,
+    }
+""",
+                encoding="utf-8",
+            )
+
+            result = run_testcase(str(testcase_path))
+
+        self.assertEqual(result["exit_code"], 1)
+        self.assertIsNone(result["raw_result"])
+        self.assertIn("main() returned None", result["error_message"])
 
     def test_run_testcase_times_out(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -331,7 +325,7 @@ def main():
             result = run_testcase(str(testcase_path), timeout_seconds=1)
 
         self.assertEqual(result["exit_code"], -1)
-        self.assertIsNone(result["benchmark_result"])
+        self.assertIsNone(result["raw_result"])
         self.assertEqual(result["error_message"], "Timeout expired after 1 seconds")
 
     def test_build_empty_result_uses_expected_shape(self):

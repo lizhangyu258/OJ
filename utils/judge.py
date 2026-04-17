@@ -20,38 +20,22 @@ def _coerce_optional_float(value):
         return None
 
 
-def build_serializable_benchmark_result(benchmark_result):
-    """Keep only the benchmark fields needed by the judge."""
-    if benchmark_result is None:
-        return None
-
-    return {
-        "precision_passed": bool(benchmark_result.get("precision_passed", False)),
-        "eager_time": _coerce_optional_float(benchmark_result.get("eager_time")),
-        "compile_time": _coerce_optional_float(benchmark_result.get("compile_time")),
-        "current_time": _coerce_optional_float(benchmark_result.get("current_time")),
-        "max_diff": _coerce_optional_float(benchmark_result.get("max_diff")),
-        "speedup": _coerce_optional_float(benchmark_result.get("speedup")),
+def extract_testcase_metrics(raw_result):
+    """Extract scoring metrics directly from a testcase benchmark raw result."""
+    metrics = {
+        "functional_passed": False,
+        "eager_time": None,
+        "compile_time": None,
+        "current_time": None,
     }
+    if raw_result is None:
+        return metrics
 
-
-def parse_testcase_output(testcase_result):
-    """Extract testcase metrics from structured benchmark data."""
-    benchmark_result = build_serializable_benchmark_result(testcase_result.get("benchmark_result"))
-    parsed_data = {
-        "functional_passed": benchmark_result["precision_passed"] if benchmark_result is not None else False,
-        "eager_time": benchmark_result["eager_time"] if benchmark_result is not None else None,
-        "compile_time": benchmark_result["compile_time"] if benchmark_result is not None else None,
-        "current_time": benchmark_result["current_time"] if benchmark_result is not None else None,
-    }
-    logger.info(
-        "Parsed testcase result - functional_passed: %s, eager_time: %s us, compile_time: %s us, current_time: %s us",
-        parsed_data["functional_passed"],
-        parsed_data["eager_time"],
-        parsed_data["compile_time"],
-        parsed_data["current_time"],
-    )
-    return parsed_data
+    metrics["functional_passed"] = bool(raw_result.get("precision_passed", False))
+    metrics["eager_time"] = _coerce_optional_float(raw_result.get("eager_time"))
+    metrics["compile_time"] = _coerce_optional_float(raw_result.get("compile_time"))
+    metrics["current_time"] = _coerce_optional_float(raw_result.get("current_time"))
+    return metrics
 
 
 def calculate_testcase_score(testcase_result, parsed_output, baseline_data):
@@ -110,7 +94,7 @@ def generate_final_result(testcase_results, baseline_data, now=None):
     """Generate the final result from all testcase results according to score.md."""
     timestamp = (now or datetime.now()).isoformat()
 
-    parsed_outputs = []
+    testcase_metrics = []
     testcase_s_i = []  # s_i for each test case
     testcase_b1_i = []  # b1_i (eager_time) for weight calculation
     functional_indicators = []  # I_i for each test case
@@ -118,13 +102,20 @@ def generate_final_result(testcase_results, baseline_data, now=None):
     total_b1 = 0.0  # sum of b1_i (eager_time) for all test cases
 
     for result in testcase_results:
-        parsed_output = parse_testcase_output(result)
-        s_i, b1_i = calculate_testcase_score(result, parsed_output, baseline_data)
+        metrics = extract_testcase_metrics(result.get("raw_result"))
+        logger.info(
+            "Using testcase raw result - functional_passed: %s, eager_time: %s us, compile_time: %s us, current_time: %s us",
+            metrics["functional_passed"],
+            metrics["eager_time"],
+            metrics["compile_time"],
+            metrics["current_time"],
+        )
+        s_i, b1_i = calculate_testcase_score(result, metrics, baseline_data)
 
-        parsed_outputs.append(parsed_output)
+        testcase_metrics.append(metrics)
         testcase_s_i.append(s_i)
         testcase_b1_i.append(b1_i)
-        I_i = 1.0 if parsed_output.get("functional_passed", False) else 0.0
+        I_i = 1.0 if metrics.get("functional_passed", False) else 0.0
         functional_indicators.append(I_i)
 
         if b1_i is not None:
@@ -134,8 +125,8 @@ def generate_final_result(testcase_results, baseline_data, now=None):
     F = sum(functional_indicators) / n if n > 0 else 0.0
     passed_testcases = sum(
         1
-        for result, parsed_output in zip(testcase_results, parsed_outputs)
-        if result["exit_code"] == 0 and parsed_output.get("functional_passed", False)
+        for result, metrics in zip(testcase_results, testcase_metrics)
+        if result["exit_code"] == 0 and metrics.get("functional_passed", False)
     )
     failed_testcases = n - passed_testcases
 
@@ -168,11 +159,12 @@ def generate_final_result(testcase_results, baseline_data, now=None):
             {
                 "testcase": result["testcase"],
                 "exit_code": result["exit_code"],
-                "functional_passed": parsed_outputs[index].get("functional_passed", False),
+                "error_message": result.get("error_message", ""),
+                "functional_passed": testcase_metrics[index].get("functional_passed", False),
                 "s_i": testcase_s_i[index],
-                "eager_time": parsed_outputs[index].get("eager_time"),
-                "compile_time": parsed_outputs[index].get("compile_time"),
-                "current_time": parsed_outputs[index].get("current_time"),
+                "eager_time": testcase_metrics[index].get("eager_time"),
+                "compile_time": testcase_metrics[index].get("compile_time"),
+                "current_time": testcase_metrics[index].get("current_time"),
                 "weight": testcase_b1_i[index] / total_b1 if total_b1 > 0 else 0.0,
             }
             for index, result in enumerate(testcase_results)

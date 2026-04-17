@@ -148,7 +148,7 @@ print(codes[0])
 
 当前脚本提供了以下预留接口，用于扩展性能指标的提取和评分：
 
-1. `parse_testcase_output()`：从 `benchmark()` 返回的结构化结果中提取性能指标
+1. `extract_testcase_metrics()`：从 `benchmark()` 返回的原始结果中提取性能指标
 2. `calculate_testcase_score()`：根据性能指标加权计算评分
 
 ### 功能扩展
