@@ -69,37 +69,27 @@ run.sh脚本会自动：
 1. 设置环境变量（如需要）
 2. 导入必要的库（torch, torch_npu等）
 3. 定义测试模型或算子
-4. 在 `main()` 中调用 `benchmark()`
-5. 返回 `benchmark()` 的结果字典
+4. 提供 `build_testcase()` 函数，返回测试配置字典
+5. 由 `case_judge.py` 统一调用 `benchmark()`
 
 示例测试用例（testcases/case1.py）：
 
 ```python
-import os
-# 环境变量调用需要在torch_npu初始化之前
-os.environ['TORCHINDUCTOR_NPU_BACKEND'] = 'mlir'
-
 import torch
-import torch_npu
-from torch._inductor.utils import run_and_get_code
-import torch_npu._inductor
-import torch
-import triton
 
-# config导入在compile执行之前
-torch._inductor.config.npu_backend = "mlir"
-
-# 定义模型
 def op_calc(x, y):
     return x * y
-x = torch.randn((3,), requires_grad=False, dtype=torch.float32, device="npu")
-y = torch.randn((3,), requires_grad=False, dtype=torch.float32, device="npu")
-std_out = op_calc(x, y)
 
-# options调用，修改compile参数
-compile_func = torch.compile(op_calc, options={"npu_backend": "mlir"})
-compile_out, codes = run_and_get_code(compile_func, x, y)
-print(codes[0])
+
+def build_testcase():
+    device = "npu"
+    x = torch.randn((3,), requires_grad=False, dtype=torch.float32, device=device)
+    y = torch.randn((3,), requires_grad=False, dtype=torch.float32, device=device)
+    return {
+        "model_or_func": op_calc,
+        "inputs": (x, y),
+        "device": device,
+    }
 ```
 
 ## 评测结果说明
@@ -168,5 +158,5 @@ python3 -m unittest discover -s unittests
 
 ## 注意事项
 
-- 确保测试用例脚本提供 `main()` 函数，并返回 `benchmark()` 的结果字典
-- 每个测试用例可在调用 `benchmark(..., artifact_subdir="case1")` 时，将 profiler 输出保存到 `prof/case1/`
+- 确保测试用例脚本提供 `build_testcase()` 函数，并返回包含 `model_or_func` 和 `inputs` 的配置字典
+- `case_judge.py` 会统一补充 `artifact_subdir`、默认 `device`、默认 warmup/exec 步数，并调用 `benchmark()`

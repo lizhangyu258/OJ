@@ -3,7 +3,6 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
-from utils import benchmark, setup_logging
 
 
 class MatMulWithFusion(torch.nn.Module):
@@ -14,28 +13,15 @@ class MatMulWithFusion(torch.nn.Module):
         return fused_result
 
 
-def main():
-    setup_logging()
-    
+def build_testcase():
     model = MatMulWithFusion()
     device = 'npu'
-    artifact_subdir = os.path.splitext(os.path.basename(__file__))[0]
-    
     x = torch.randn(64, 128, device=device)
     y = torch.randn(128, 64, device=device)
     z = torch.randn(64, 64, device=device)
     w = torch.randn(64, 64, device=device)
-    
-    results = benchmark(
-        model_or_func=model,
-        inputs=(x, y, z, w),
-        device=device,
-        warmup_steps=5,
-        exec_steps=10,
-        artifact_subdir=artifact_subdir
-    )
-    return results
-
-
-if __name__ == "__main__":
-    main()
+    return {
+        "model_or_func": model,
+        "inputs": (x, y, z, w),
+        "device": device,
+    }

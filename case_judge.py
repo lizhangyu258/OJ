@@ -44,15 +44,44 @@ def load_testcase_module(testcase_file):
     return module
 
 
+def validate_testcase_spec(testcase_spec, testcase_name):
+    if testcase_spec is None:
+        raise ValueError(
+            f"Testcase {testcase_name} build_testcase() returned None."
+        )
+    if not isinstance(testcase_spec, dict):
+        raise TypeError(
+            f"Testcase {testcase_name} build_testcase() returned {type(testcase_spec).__name__}, expected dict."
+        )
+
+    required_keys = {"model_or_func", "inputs"}
+    missing_keys = sorted(required_keys - testcase_spec.keys())
+    if missing_keys:
+        raise ValueError(
+            f"Testcase {testcase_name} returned an incomplete testcase spec, "
+            f"missing keys: {', '.join(missing_keys)}"
+        )
+
+    return testcase_spec
+
+
+def normalize_testcase_spec(testcase_spec, testcase_name):
+    normalized_spec = dict(testcase_spec)
+    normalized_spec.setdefault("device", "npu")
+    normalized_spec.setdefault("warmup_steps", 5)
+    normalized_spec.setdefault("exec_steps", 10)
+    normalized_spec.setdefault("artifact_subdir", os.path.splitext(testcase_name)[0])
+    return normalized_spec
+
+
 def validate_benchmark_result(raw_result, testcase_name):
     if raw_result is None:
         raise ValueError(
-            f"Testcase {testcase_name} main() returned None. "
-            "Ensure main() returns the result of benchmark(...)."
+            f"Testcase {testcase_name} benchmark() returned None."
         )
     if not isinstance(raw_result, dict):
         raise TypeError(
-            f"Testcase {testcase_name} main() returned {type(raw_result).__name__}, expected dict."
+            f"Testcase {testcase_name} benchmark() returned {type(raw_result).__name__}, expected dict."
         )
 
     required_keys = {"precision_passed", "eager_time", "compile_time", "current_time"}
@@ -90,17 +119,25 @@ def testcase_timeout(timeout_seconds):
         signal.signal(signal.SIGALRM, previous_handler)
 
 # 运行单个测试用例
-def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS):
+def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS, benchmark_runner=None):
     testcase_name = os.path.basename(testcase_file)
     logger.info(f"Running test case: {testcase_name}")
 
     try:
         with testcase_timeout(timeout_seconds):
             module = load_testcase_module(testcase_file)
-            if not hasattr(module, 'main'):
-                raise AttributeError(f"Testcase {testcase_name} does not define main()")
+            if not hasattr(module, 'build_testcase'):
+                raise AttributeError(f"Testcase {testcase_name} does not define build_testcase()")
 
-            raw_result = validate_benchmark_result(module.main(), testcase_name)
+            testcase_spec = validate_testcase_spec(module.build_testcase(), testcase_name)
+            testcase_spec = normalize_testcase_spec(testcase_spec, testcase_name)
+
+            if benchmark_runner is None:
+                from utils.benchmark import benchmark as benchmark_runner_impl
+            else:
+                benchmark_runner_impl = benchmark_runner
+
+            raw_result = validate_benchmark_result(benchmark_runner_impl(**testcase_spec), testcase_name)
 
         result = {
             'testcase': testcase_name,
@@ -130,6 +167,9 @@ def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS):
 
 
 def main():
+    from utils import setup_logging
+
+    setup_logging()
     logger.info("Starting case evaluation...")
     
     # 获取所有测试用例

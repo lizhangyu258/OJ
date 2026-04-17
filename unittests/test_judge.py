@@ -230,30 +230,39 @@ class CaseJudgeCoreTests(unittest.TestCase):
                 "testcase": "case1.py",
                 "exit_code": 1,
                 "raw_result": None,
-                "error_message": "main() returned None",
+                "error_message": "build_testcase() returned None",
             }
         ]
 
         final_result = generate_final_result(testcase_results, {}, now=datetime(2026, 4, 16, 12, 0, 0))
 
-        self.assertEqual(final_result["detail"]["testcase_details"][0]["error_message"], "main() returned None")
+        self.assertEqual(final_result["detail"]["testcase_details"][0]["error_message"], "build_testcase() returned None")
 
-    def test_run_testcase_calls_main_directly_and_returns_raw_result(self):
+    def test_run_testcase_builds_spec_and_returns_raw_result(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             testcase_path = Path(temp_dir) / "temp_case.py"
             testcase_path.write_text(
-                """def main():
+                """def build_testcase():
     return {
-        "precision_passed": True,
-        "eager_time": 100.0,
-        "compile_time": 50.0,
-        "current_time": 40.0,
+        "model_or_func": "demo",
+        "inputs": (1, 2),
     }
 """,
                 encoding="utf-8",
             )
 
-            result = run_testcase(str(testcase_path))
+            benchmark_calls = []
+
+            def fake_benchmark_runner(**kwargs):
+                benchmark_calls.append(kwargs)
+                return {
+                    "precision_passed": True,
+                    "eager_time": 100.0,
+                    "compile_time": 50.0,
+                    "current_time": 40.0,
+                }
+
+            result = run_testcase(str(testcase_path), benchmark_runner=fake_benchmark_runner)
 
         self.assertEqual(result["exit_code"], 0)
         self.assertEqual(
@@ -266,63 +275,98 @@ class CaseJudgeCoreTests(unittest.TestCase):
             },
         )
         self.assertEqual(result["error_message"], "")
+        self.assertEqual(len(benchmark_calls), 1)
+        self.assertEqual(benchmark_calls[0]["model_or_func"], "demo")
+        self.assertEqual(benchmark_calls[0]["inputs"], (1, 2))
+        self.assertEqual(benchmark_calls[0]["device"], "npu")
+        self.assertEqual(benchmark_calls[0]["warmup_steps"], 5)
+        self.assertEqual(benchmark_calls[0]["exec_steps"], 10)
+        self.assertEqual(benchmark_calls[0]["artifact_subdir"], "temp_case")
 
     def test_run_testcase_wraps_exceptions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             testcase_path = Path(temp_dir) / "temp_case.py"
             testcase_path.write_text(
-                """def main():
-    raise RuntimeError("boom")
+                """def build_testcase():
+    return {
+        "model_or_func": "demo",
+        "inputs": (),
+    }
 """,
                 encoding="utf-8",
             )
 
-            result = run_testcase(str(testcase_path))
+            def fake_benchmark_runner(**kwargs):
+                raise RuntimeError("boom")
+
+            result = run_testcase(str(testcase_path), benchmark_runner=fake_benchmark_runner)
 
         self.assertEqual(result["exit_code"], 1)
         self.assertIsNone(result["raw_result"])
         self.assertEqual(result["error_message"], "boom")
 
-    def test_run_testcase_reports_missing_return_clearly(self):
+    def test_run_testcase_reports_missing_testcase_spec_clearly(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             testcase_path = Path(temp_dir) / "temp_case.py"
             testcase_path.write_text(
-                """def main():
-    result = {
-        "precision_passed": True,
-        "eager_time": 100.0,
-        "compile_time": 50.0,
-        "current_time": 40.0,
+                """def build_testcase():
+    spec = {
+        "model_or_func": "demo",
+        "inputs": (),
     }
 """,
                 encoding="utf-8",
             )
 
-            result = run_testcase(str(testcase_path))
+            result = run_testcase(str(testcase_path), benchmark_runner=lambda **kwargs: {})
 
         self.assertEqual(result["exit_code"], 1)
         self.assertIsNone(result["raw_result"])
-        self.assertIn("main() returned None", result["error_message"])
+        self.assertIn("build_testcase() returned None", result["error_message"])
+
+    def test_run_testcase_reports_missing_benchmark_fields_clearly(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            testcase_path = Path(temp_dir) / "temp_case.py"
+            testcase_path.write_text(
+                """def build_testcase():
+    return {
+        "model_or_func": "demo",
+        "inputs": (),
+    }
+""",
+                encoding="utf-8",
+            )
+
+            result = run_testcase(str(testcase_path), benchmark_runner=lambda **kwargs: {"precision_passed": True})
+
+        self.assertEqual(result["exit_code"], 1)
+        self.assertIsNone(result["raw_result"])
+        self.assertIn("missing keys: compile_time, current_time, eager_time", result["error_message"])
 
     def test_run_testcase_times_out(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             testcase_path = Path(temp_dir) / "temp_case.py"
             testcase_path.write_text(
-                """import time
-
-def main():
-    time.sleep(2)
+                """def build_testcase():
     return {
-        "precision_passed": True,
-        "eager_time": 100.0,
-        "compile_time": 50.0,
-        "current_time": 40.0,
+        "model_or_func": "demo",
+        "inputs": (),
     }
 """,
                 encoding="utf-8",
             )
 
-            result = run_testcase(str(testcase_path), timeout_seconds=1)
+            def fake_benchmark_runner(**kwargs):
+                import time
+                time.sleep(2)
+                return {
+                    "precision_passed": True,
+                    "eager_time": 100.0,
+                    "compile_time": 50.0,
+                    "current_time": 40.0,
+                }
+
+            result = run_testcase(str(testcase_path), timeout_seconds=1, benchmark_runner=fake_benchmark_runner)
 
         self.assertEqual(result["exit_code"], -1)
         self.assertIsNone(result["raw_result"])

@@ -3,7 +3,6 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
-from utils import benchmark, setup_logging
 
 
 class FusedAttentionScore(torch.nn.Module):
@@ -18,27 +17,14 @@ class FusedAttentionScore(torch.nn.Module):
         return scores.softmax(dim=-1)
 
 
-def main():
-    setup_logging()
-    
+def build_testcase():
     device = 'npu'
     d_k = 64
     model = FusedAttentionScore(d_k=d_k).to(device)
-    artifact_subdir = os.path.splitext(os.path.basename(__file__))[0]
-    
     q = torch.randn(8, 12, d_k, device=device)
     k = torch.randn(8, 12, d_k, device=device)
-    
-    results = benchmark(
-        model_or_func=model,
-        inputs=(q, k),
-        device=device,
-        warmup_steps=5,
-        exec_steps=10,
-        artifact_subdir=artifact_subdir
-    )
-    return results
-
-
-if __name__ == "__main__":
-    main()
+    return {
+        "model_or_func": model,
+        "inputs": (q, k),
+        "device": device,
+    }
