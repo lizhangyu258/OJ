@@ -25,8 +25,7 @@ def main():
         inputs=(x, y),
         device=device,
         warmup_steps=5,
-        exec_steps=10,
-        use_baseline_eager=True
+        exec_steps=10
     )
 
 

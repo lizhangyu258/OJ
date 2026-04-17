@@ -1,6 +1,5 @@
 import os
 import logging
-import uuid
 import csv
 from typing import Optional, Tuple
 
@@ -19,24 +18,18 @@ def get_default_prof_dir() -> str:
     return os.path.join(project_root, "prof")
 
 
-def generate_unique_id() -> str:
-    """生成全局唯一ID"""
-    return str(uuid.uuid4())
-
-
-def create_prof_output_dir(base_dir: str, unique_id: Optional[str] = None) -> Tuple[str, str]:
+def create_prof_output_dir(base_dir: str) -> Tuple[str, str]:
     """
-    创建profiler输出目录，使用唯一ID作为子目录名
+    创建profiler输出目录
     
     Args:
         base_dir: 基础输出目录（通常是项目根目录下的prof目录）
-        unique_id: 可选的唯一ID，如果不提供则自动生成
     
     Returns:
         Tuple[完整输出路径, 唯一ID]
     """
-    if unique_id is None:
-        unique_id = generate_unique_id()
+    import uuid
+    unique_id = str(uuid.uuid4())
     
     output_dir = os.path.join(base_dir, unique_id)
     os.makedirs(output_dir, exist_ok=True)

@@ -42,6 +42,43 @@ def precision_check(eager_result, graph_result, rtol=1e-5, atol=1e-5) -> Tuple[b
     return passed, max_diff
 
 
+def _prepare_model_and_compile(
+    model_or_func: Any,
+    inputs: Tuple[Any, ...],
+    device: str,
+    compile_options: Optional[dict]
+):
+    """
+    公共辅助函数：准备模型并编译
+    """
+    if isinstance(model_or_func, torch.nn.Module):
+        model = model_or_func
+        model.to(device)
+    else:
+        model = model_or_func
+    
+    compile_func = torch.compile(model, **compile_options)
+    compile_out, codes = run_and_get_code(compile_func, *inputs)
+    logger.info(f"compile_out: {compile_out}")
+    logger.info(f"codes[0]: {codes[0]}")
+    
+    return model, compile_func, compile_out, codes
+
+
+def _log_precision_result(passed, eager_result, graph_result, max_diff):
+    """
+    公共辅助函数：记录精度检查结果
+    """
+    if passed:
+        logger.info("Precision test result: Passed")
+    else:
+        logger.error("Precision test result: Failed")
+        logger.error(f"Expected: {eager_result}")
+        logger.error(f"Actual: {graph_result}")
+        if max_diff is not None:
+            logger.error(f"max diff: {max_diff}")
+
+
 def run_profiler(
     func: Callable,
     inputs: Tuple[Any, ...],
@@ -108,16 +145,9 @@ def run_full_benchmark(
     if prof_config is None:
         prof_config = get_default_prof_config()
     
-    if isinstance(model_or_func, torch.nn.Module):
-        model = model_or_func
-        model.to(device)
-    else:
-        model = model_or_func
-    
-    compile_func = torch.compile(model, **compile_options)
-    compile_out, codes = run_and_get_code(compile_func, *inputs)
-    logger.info(f"compile_out: {compile_out}")
-    logger.info(f"codes[0]: {codes[0]}")
+    model, compile_func, compile_out, codes = _prepare_model_and_compile(
+        model_or_func, inputs, device, compile_options
+    )
     
     results = {
         "compile_out": compile_out,
@@ -131,14 +161,7 @@ def run_full_benchmark(
     graph_result = compile_func(*inputs)
     
     passed, max_diff = precision_check(eager_result, graph_result, rtol=rtol, atol=atol)
-    if passed:
-        logger.info("Precision test result: Passed")
-    else:
-        logger.error("Precision test result: Failed")
-        logger.error(f"Expected: {eager_result}")
-        logger.error(f"Actual: {graph_result}")
-        if max_diff is not None:
-            logger.error(f"max diff: {max_diff}")
+    _log_precision_result(passed, eager_result, graph_result, max_diff)
     
     results["precision_passed"] = passed
     results["eager_result"] = eager_result
@@ -190,10 +213,6 @@ def run_full_benchmark(
         logger.info(f"Speedup: {speedup:.4f}x")
         results["speedup"] = speedup
     
-    results["eager_time"] = eager_time
-    results["compile_time"] = compile_time
-    results["current_time"] = current_time
-    
     logger.info("\n=== Benchmark Summary ===")
     logger.info(f"Precision test: {'Passed' if passed else 'Failed'}")
     if eager_time is not None:
@@ -228,16 +247,9 @@ def run_benchmark(
     if prof_config is None:
         prof_config = get_default_prof_config()
     
-    if isinstance(model_or_func, torch.nn.Module):
-        model = model_or_func
-        model.to(device)
-    else:
-        model = model_or_func
-    
-    compile_func = torch.compile(model, **compile_options)
-    compile_out, codes = run_and_get_code(compile_func, *inputs)
-    logger.info(f"compile_out: {compile_out}")
-    logger.info(f"codes[0]: {codes[0]}")
+    model, compile_func, compile_out, codes = _prepare_model_and_compile(
+        model_or_func, inputs, device, compile_options
+    )
     
     results = {
         "compile_out": compile_out,
@@ -252,14 +264,7 @@ def run_benchmark(
         graph_result = compile_func(*inputs)
         
         passed, max_diff = precision_check(eager_result, graph_result, rtol=rtol, atol=atol)
-        if passed:
-            logger.info("Precision test result: Passed")
-        else:
-            logger.error("Precision test result: Failed")
-            logger.error(f"Expected: {eager_result}")
-            logger.error(f"Actual: {graph_result}")
-            if max_diff is not None:
-                logger.error(f"max diff: {max_diff}")
+        _log_precision_result(passed, eager_result, graph_result, max_diff)
         
         results["precision_passed"] = passed
         results["eager_result"] = eager_result

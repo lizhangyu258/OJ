@@ -23,8 +23,7 @@ def main():
         device=device,
         compile_options={"options": {"npu_backend": "mlir"}},
         warmup_steps=5,
-        exec_steps=10,
-        use_baseline_eager=True
+        exec_steps=10
     )
 
 

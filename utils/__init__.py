@@ -1,6 +1,12 @@
 import logging
 import os
 
+from .benchmark import (
+    setup_environment,
+    run_benchmark,
+    get_default_prof_config,
+    run_full_benchmark
+)
 
 def setup_logging(log_level=None):
     """
@@ -26,19 +32,10 @@ def setup_logging(log_level=None):
         logger.setLevel(numeric_level)
         logger.propagate = True
 
-
-__all__ = ['setup_environment', 'run_benchmark', 'get_default_prof_config', 'run_full_benchmark', 'setup_logging']
-
-
-def __getattr__(name):
-    if name in __all__:
-        if name == 'setup_logging':
-            return setup_logging
-        from .benchmark import (
-            setup_environment,
-            run_benchmark,
-            get_default_prof_config,
-            run_full_benchmark
-        )
-        return locals()[name]
-    raise AttributeError(f"module {__name__} has no attribute {name}")
+__all__ = [
+    'setup_environment',
+    'run_benchmark',
+    'get_default_prof_config',
+    'run_full_benchmark',
+    'setup_logging'
+]
