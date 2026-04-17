@@ -3,6 +3,8 @@ import json
 import glob
 import importlib.util
 import logging
+import signal
+from contextlib import contextmanager
 
 from utils.judge import build_serializable_benchmark_result
 from utils.judge import build_empty_result
@@ -20,6 +22,7 @@ TESTCASES_DIR = os.path.join(ROOT_DIR, 'testcases')
 # Baseline数据目录
 BASELINE_DIR = os.path.join(ROOT_DIR, 'baseline')
 BASELINE_DATA_FILE = os.path.join(BASELINE_DIR, 'data.yaml')
+TESTCASE_TIMEOUT_SECONDS = 300
 
 # 获取所有测试用例文件
 def get_testcase_files():
@@ -41,17 +44,42 @@ def load_testcase_module(testcase_file):
     spec.loader.exec_module(module)
     return module
 
+
+class TestcaseTimeoutError(TimeoutError):
+    """Raised when a testcase exceeds the configured execution timeout."""
+
+
+def _handle_testcase_timeout(signum, frame):
+    raise TestcaseTimeoutError
+
+
+@contextmanager
+def testcase_timeout(timeout_seconds):
+    if timeout_seconds is None or timeout_seconds <= 0:
+        yield
+        return
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    signal.signal(signal.SIGALRM, _handle_testcase_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
 # 运行单个测试用例
-def run_testcase(testcase_file):
+def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS):
     testcase_name = os.path.basename(testcase_file)
     logger.info(f"Running test case: {testcase_name}")
 
     try:
-        module = load_testcase_module(testcase_file)
-        if not hasattr(module, 'main'):
-            raise AttributeError(f"Testcase {testcase_name} does not define main()")
+        with testcase_timeout(timeout_seconds):
+            module = load_testcase_module(testcase_file)
+            if not hasattr(module, 'main'):
+                raise AttributeError(f"Testcase {testcase_name} does not define main()")
 
-        benchmark_result = build_serializable_benchmark_result(module.main())
+            benchmark_result = build_serializable_benchmark_result(module.main())
         if benchmark_result is None:
             raise ValueError(f"Testcase {testcase_name} returned no benchmark result")
 
@@ -63,6 +91,15 @@ def run_testcase(testcase_file):
         }
         logger.info(f"Test case {testcase_name} completed successfully")
         return result
+    except TestcaseTimeoutError:
+        error_message = f"Timeout expired after {timeout_seconds} seconds"
+        logger.error(f"Test case {testcase_name} timed out after {timeout_seconds} seconds")
+        return {
+            'testcase': testcase_name,
+            'exit_code': -1,
+            'benchmark_result': None,
+            'error_message': error_message,
+        }
     except Exception as e:
         logger.exception(f"Error running test case {testcase_name}")
         return {

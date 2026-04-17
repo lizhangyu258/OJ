@@ -310,6 +310,30 @@ class CaseJudgeCoreTests(unittest.TestCase):
         self.assertIsNone(result["benchmark_result"])
         self.assertEqual(result["error_message"], "boom")
 
+    def test_run_testcase_times_out(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            testcase_path = Path(temp_dir) / "temp_case.py"
+            testcase_path.write_text(
+                """import time
+
+def main():
+    time.sleep(2)
+    return {
+        "precision_passed": True,
+        "eager_time": 100.0,
+        "compile_time": 50.0,
+        "current_time": 40.0,
+    }
+""",
+                encoding="utf-8",
+            )
+
+            result = run_testcase(str(testcase_path), timeout_seconds=1)
+
+        self.assertEqual(result["exit_code"], -1)
+        self.assertIsNone(result["benchmark_result"])
+        self.assertEqual(result["error_message"], "Timeout expired after 1 seconds")
+
     def test_build_empty_result_uses_expected_shape(self):
         now = datetime(2026, 4, 16, 12, 0, 0)
 
