@@ -126,7 +126,7 @@ def run_profiler(
     return prof_output_dir, avg_exec_time
 
 
-def run_full_benchmark(
+def benchmark(
     model_or_func: Any,
     inputs: Tuple[Any, ...],
     device: str = 'npu',
@@ -222,65 +222,5 @@ def run_full_benchmark(
     if current_time is not None:
         logger.info(f"[current] Average execution time: {current_time} us")
     logger.info("========================")
-    
-    return results
-
-
-def run_benchmark(
-    model_or_func: Any,
-    inputs: Tuple[Any, ...],
-    device: str = 'npu',
-    compile_options: Optional[dict] = None,
-    warmup_steps: int = 5,
-    exec_steps: int = 10,
-    rtol: float = 1e-5,
-    atol: float = 1e-5,
-    prof_config=None,
-    skip_profiler: bool = False,
-    skip_precision: bool = False
-) -> dict:
-    setup_environment()
-    
-    if compile_options is None:
-        compile_options = {"dynamic": False}
-    
-    if prof_config is None:
-        prof_config = get_default_prof_config()
-    
-    model, compile_func, compile_out, codes = _prepare_model_and_compile(
-        model_or_func, inputs, device, compile_options
-    )
-    
-    results = {
-        "compile_out": compile_out,
-        "codes": codes,
-    }
-    
-    if not skip_precision:
-        if isinstance(model, torch.nn.Module):
-            eager_result = model(*inputs)
-        else:
-            eager_result = model(*inputs)
-        graph_result = compile_func(*inputs)
-        
-        passed, max_diff = precision_check(eager_result, graph_result, rtol=rtol, atol=atol)
-        _log_precision_result(passed, eager_result, graph_result, max_diff)
-        
-        results["precision_passed"] = passed
-        results["eager_result"] = eager_result
-        results["graph_result"] = graph_result
-        results["max_diff"] = max_diff
-    
-    if not skip_profiler:
-        prof_output_dir, avg_exec_time = run_profiler(
-            compile_func,
-            inputs,
-            warmup_steps,
-            exec_steps,
-            prof_config
-        )
-        
-        results["prof_output_dir"] = prof_output_dir
-        results["avg_exec_time"] = avg_exec_time
     
     return results

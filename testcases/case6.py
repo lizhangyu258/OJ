@@ -3,7 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
-from utils import run_full_benchmark, setup_logging
+from utils import benchmark, setup_logging
 
 
 def op_calc(x, y):
@@ -17,7 +17,7 @@ def main():
     x = torch.randn((3,), requires_grad=False, dtype=torch.float32, device=device)
     y = torch.randn((3,), requires_grad=False, dtype=torch.float32, device=device)
     
-    results = run_full_benchmark(
+    results = benchmark(
         model_or_func=op_calc,
         inputs=(x, y),
         device=device,

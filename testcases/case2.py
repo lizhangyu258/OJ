@@ -3,7 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
-from utils import run_full_benchmark, setup_logging
+from utils import benchmark, setup_logging
 
 
 class TestCase1(torch.nn.Module):
@@ -20,7 +20,7 @@ def main():
     x = torch.randn(10, 10, device=device)
     y = torch.randn(10, 10, device=device)
     
-    results = run_full_benchmark(
+    results = benchmark(
         model_or_func=model,
         inputs=(x, y),
         device=device,

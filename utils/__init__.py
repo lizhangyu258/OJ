@@ -3,9 +3,8 @@ import os
 
 from .benchmark import (
     setup_environment,
-    run_benchmark,
     get_default_prof_config,
-    run_full_benchmark
+    benchmark
 )
 
 def setup_logging(log_level=None):
@@ -34,8 +33,7 @@ def setup_logging(log_level=None):
 
 __all__ = [
     'setup_environment',
-    'run_benchmark',
     'get_default_prof_config',
-    'run_full_benchmark',
+    'benchmark',
     'setup_logging'
 ]
