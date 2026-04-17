@@ -21,31 +21,37 @@ def is_functional_test_passed(stdout):
     return FUNCTIONAL_PASS_TOKEN in stdout if stdout else False
 
 
+def get_testcase_text(testcase_result):
+    """Return combined testcase output text from stdout and stderr."""
+    parts = [testcase_result.get("stdout", ""), testcase_result.get("stderr", "")]
+    return "\n".join(part for part in parts if part)
+
+
 def parse_testcase_output(testcase_result):
     """Parse testcase output and extract performance metrics (eager, compile, and current)."""
-    stdout = testcase_result.get("stdout", "")
+    output_text = get_testcase_text(testcase_result)
     parsed_data = {
-        "functional_passed": is_functional_test_passed(stdout),
+        "functional_passed": is_functional_test_passed(output_text),
         "eager_time": None,
         "compile_time": None,
         "current_time": None,
     }
 
-    match_eager = EAGER_TIME_PATTERN.search(stdout)
+    match_eager = EAGER_TIME_PATTERN.search(output_text)
     if match_eager:
         try:
             parsed_data["eager_time"] = float(match_eager.group(1))
         except ValueError:
             logger.warning("Failed to parse eager_time from: %s", match_eager.group(1))
 
-    match_compile = COMPILE_TIME_PATTERN.search(stdout)
+    match_compile = COMPILE_TIME_PATTERN.search(output_text)
     if match_compile:
         try:
             parsed_data["compile_time"] = float(match_compile.group(1))
         except ValueError:
             logger.warning("Failed to parse compile_time from: %s", match_compile.group(1))
 
-    match_current = CURRENT_TIME_PATTERN.search(stdout)
+    match_current = CURRENT_TIME_PATTERN.search(output_text)
     if match_current:
         try:
             parsed_data["current_time"] = float(match_current.group(1))

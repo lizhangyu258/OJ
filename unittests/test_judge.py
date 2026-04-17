@@ -55,6 +55,23 @@ class CaseJudgeCoreTests(unittest.TestCase):
         self.assertIsNone(parsed["current_time"])
         self.assertFalse(parsed["functional_passed"])
 
+    def test_parse_testcase_output_reads_functional_and_timing_data_from_stderr(self):
+        testcase_result = {
+            "stdout": "",
+            "stderr": """Precision test result: Passed
+[eager] Average execution time: 100.0 us
+[compile] Average execution time: 50.0 us
+[current] Average execution time: 40.0 us
+""",
+        }
+
+        parsed = parse_testcase_output(testcase_result)
+
+        self.assertTrue(parsed["functional_passed"])
+        self.assertEqual(parsed["eager_time"], 100.0)
+        self.assertEqual(parsed["compile_time"], 50.0)
+        self.assertEqual(parsed["current_time"], 40.0)
+
     def test_load_baseline_data_returns_empty_dict_when_file_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             baseline_path = Path(temp_dir) / "missing.yaml"
