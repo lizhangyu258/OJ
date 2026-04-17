@@ -6,26 +6,24 @@ import torch
 from utils import benchmark, setup_logging
 
 
-class RMSNorm(torch.nn.Module):
-    """简单的RMSNorm实现"""
-    def __init__(self, hidden_size, eps=1e-6):
+class MatMulWithBias(torch.nn.Module):
+    """带偏置的矩阵乘法"""
+    def __init__(self, in_dim, out_dim):
         super().__init__()
-        self.eps = eps
-        self.weight = torch.nn.Parameter(torch.ones(hidden_size))
+        self.weight = torch.nn.Parameter(torch.randn(in_dim, out_dim))
+        self.bias = torch.nn.Parameter(torch.randn(out_dim))
     
     def forward(self, x):
-        norm = x.pow(2).mean(-1, keepdim=True).sqrt()
-        x = x / (norm + self.eps)
-        return x * self.weight
+        return x @ self.weight + self.bias
 
 
 def main():
     setup_logging()
     
     device = 'npu'
-    model = RMSNorm(hidden_size=512).to(device)
+    model = MatMulWithBias(in_dim=256, out_dim=128).to(device)
     
-    x = torch.randn(32, 512, device=device)
+    x = torch.randn(64, 256, device=device)
     
     results = benchmark(
         model_or_func=model,

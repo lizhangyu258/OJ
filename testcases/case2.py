@@ -6,7 +6,8 @@ import torch
 from utils import benchmark, setup_logging
 
 
-class TestCase1(torch.nn.Module):
+class VectorOps(torch.nn.Module):
+    """组合向量操作：乘法、加法、减法"""
     def forward(self, x, y):
         return (x * y) + (x - y)
 
@@ -14,11 +15,11 @@ class TestCase1(torch.nn.Module):
 def main():
     setup_logging()
     
-    model = TestCase1()
+    model = VectorOps()
     device = 'npu'
     
-    x = torch.randn(10, 10, device=device)
-    y = torch.randn(10, 10, device=device)
+    x = torch.randn(128, 128, device=device)
+    y = torch.randn(128, 128, device=device)
     
     results = benchmark(
         model_or_func=model,

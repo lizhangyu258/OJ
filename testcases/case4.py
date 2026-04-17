@@ -6,22 +6,23 @@ import torch
 from utils import benchmark, setup_logging
 
 
-def op_calc(x, y):
-    return x * y
+def fused_add_mul(x, y, z):
+    """融合加法和乘法操作"""
+    return x + y * z
 
 
 def main():
     setup_logging()
     
     device = 'npu'
-    x = torch.randn((3,), requires_grad=False, dtype=torch.float32, device=device)
-    y = torch.randn((3,), requires_grad=False, dtype=torch.float32, device=device)
+    x = torch.randn((256, 256), requires_grad=False, dtype=torch.float32, device=device)
+    y = torch.randn((256, 256), requires_grad=False, dtype=torch.float32, device=device)
+    z = torch.randn((256, 256), requires_grad=False, dtype=torch.float32, device=device)
     
     results = benchmark(
-        model_or_func=op_calc,
-        inputs=(x, y),
+        model_or_func=fused_add_mul,
+        inputs=(x, y, z),
         device=device,
-        compile_options={"options": {"npu_backend": "mlir"}},
         warmup_steps=5,
         exec_steps=10
     )

@@ -6,23 +6,32 @@ import torch
 from utils import benchmark, setup_logging
 
 
-class TestCase5(torch.nn.Module):
-    def forward(self, x, y):
-        return (x * y) + (x - y)
+class LayerNorm(torch.nn.Module):
+    """简单的LayerNorm实现"""
+    def __init__(self, hidden_size, eps=1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = torch.nn.Parameter(torch.ones(hidden_size))
+        self.bias = torch.nn.Parameter(torch.zeros(hidden_size))
+    
+    def forward(self, x):
+        mean = x.mean(-1, keepdim=True)
+        var = ((x - mean) ** 2).mean(-1, keepdim=True)
+        x = (x - mean) * (var + self.eps).rsqrt()
+        return x * self.weight + self.bias
 
 
 def main():
     setup_logging()
     
-    model = TestCase5()
     device = 'npu'
+    model = LayerNorm(hidden_size=512).to(device)
     
-    x = torch.randn(10, 10, device=device)
-    y = torch.randn(10, 10, device=device)
+    x = torch.randn(32, 512, device=device)
     
     results = benchmark(
         model_or_func=model,
-        inputs=(x, y),
+        inputs=(x,),
         device=device,
         warmup_steps=5,
         exec_steps=10
