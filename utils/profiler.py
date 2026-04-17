@@ -6,6 +6,21 @@ from typing import Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+def resolve_output_dir(base_dir: str, subdir: Optional[str] = None) -> str:
+    """
+    基于基础目录和可选子目录，得到最终保存目录。
+    """
+    if not subdir:
+        return base_dir
+
+    normalized_subdir = os.path.normpath(subdir.strip())
+    if normalized_subdir in ("", "."):
+        return base_dir
+    if os.path.isabs(normalized_subdir) or normalized_subdir.startswith(".."):
+        raise ValueError(f"Invalid output subdir: {subdir}")
+    return os.path.join(base_dir, normalized_subdir)
+
+
 def get_default_prof_dir() -> str:
     """
     获取默认的prof目录路径（项目根目录下的prof目录）
@@ -117,7 +132,11 @@ def find_and_parse_step_trace(prof_output_dir: str) -> Optional[float]:
     return get_step_time_from_csv(csv_path)
 
 
-def setup_profiler_output(base_prof_dir: str, print_log: bool = True) -> str:
+def setup_profiler_output(
+    base_prof_dir: str,
+    artifact_subdir: Optional[str] = None,
+    print_log: bool = True
+) -> str:
     """
     设置profiler输出目录的完整流程
     
@@ -128,9 +147,10 @@ def setup_profiler_output(base_prof_dir: str, print_log: bool = True) -> str:
     Returns:
         完整输出路径
     """
-    os.makedirs(base_prof_dir, exist_ok=True)
-    
-    output_dir, unique_id = create_prof_output_dir(base_prof_dir)
+    prof_dir = resolve_output_dir(base_prof_dir, artifact_subdir)
+    os.makedirs(prof_dir, exist_ok=True)
+
+    output_dir, unique_id = create_prof_output_dir(prof_dir)
     
     if print_log:
         logger.info(f"Profiler output directory: {output_dir}")

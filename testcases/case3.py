@@ -19,6 +19,7 @@ def main():
     
     model = MatMulWithFusion()
     device = 'npu'
+    artifact_subdir = os.path.splitext(os.path.basename(__file__))[0]
     
     x = torch.randn(64, 128, device=device)
     y = torch.randn(128, 64, device=device)
@@ -30,7 +31,8 @@ def main():
         inputs=(x, y, z, w),
         device=device,
         warmup_steps=5,
-        exec_steps=10
+        exec_steps=10,
+        artifact_subdir=artifact_subdir
     )
 
 

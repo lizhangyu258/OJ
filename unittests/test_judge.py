@@ -14,6 +14,8 @@ from utils.judge import is_functional_test_passed
 from utils.judge import load_baseline_data
 from utils.judge import parse_testcase_output
 from utils.profiler import get_step_time_from_csv
+from utils.profiler import resolve_output_dir
+from utils.profiler import setup_profiler_output
 
 
 class CaseJudgeCoreTests(unittest.TestCase):
@@ -217,6 +219,22 @@ class CaseJudgeCoreTests(unittest.TestCase):
 
 
 class ProfilerTests(unittest.TestCase):
+    def test_resolve_output_dir_appends_subdir(self):
+        self.assertEqual(resolve_output_dir("/tmp/prof", "test0"), "/tmp/prof/test0")
+
+    def test_resolve_output_dir_returns_base_dir_for_empty_subdir(self):
+        self.assertEqual(resolve_output_dir("/tmp/prof", " . "), "/tmp/prof")
+
+    def test_resolve_output_dir_rejects_outside_path(self):
+        with self.assertRaises(ValueError):
+            resolve_output_dir("/tmp/prof", "../test0")
+
+    def test_setup_profiler_output_creates_directory_under_subdir(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = setup_profiler_output(temp_dir, "test0", print_log=False)
+            self.assertTrue(output_dir.startswith(os.path.join(temp_dir, "test0")))
+            self.assertTrue(os.path.isdir(output_dir))
+
     def test_get_step_time_from_csv_returns_none_when_file_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             missing_path = Path(temp_dir) / "missing.csv"

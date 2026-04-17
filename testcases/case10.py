@@ -24,6 +24,7 @@ def main():
     device = 'npu'
     d_k = 64
     model = FusedAttentionScore(d_k=d_k).to(device)
+    artifact_subdir = os.path.splitext(os.path.basename(__file__))[0]
     
     q = torch.randn(8, 12, d_k, device=device)
     k = torch.randn(8, 12, d_k, device=device)
@@ -33,7 +34,8 @@ def main():
         inputs=(q, k),
         device=device,
         warmup_steps=5,
-        exec_steps=10
+        exec_steps=10,
+        artifact_subdir=artifact_subdir
     )
 
 

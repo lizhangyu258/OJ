@@ -17,6 +17,7 @@ def main():
     
     model = VectorOps()
     device = 'npu'
+    artifact_subdir = os.path.splitext(os.path.basename(__file__))[0]
     
     x = torch.randn(128, 128, device=device)
     y = torch.randn(128, 128, device=device)
@@ -26,7 +27,8 @@ def main():
         inputs=(x, y),
         device=device,
         warmup_steps=5,
-        exec_steps=10
+        exec_steps=10,
+        artifact_subdir=artifact_subdir
     )
 
 

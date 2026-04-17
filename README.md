@@ -168,5 +168,6 @@ python3 -m unittest discover -s unittests
 
 - 确保测试用例脚本具有正确的执行权限
 - 评测过程中会生成outputs目录，该目录已添加到.gitignore中
-- 每个测试用例的输出会保存到outputs目录下，格式为`测试用例名.out`（标准输出）和`测试用例名.err`（错误输出）
+- 每个测试用例的输出会保存到 `outputs/测试用例名/` 目录下，格式为`测试用例名.out`（标准输出）和`测试用例名.err`（错误输出）
+- 每个测试用例可在调用 `benchmark(..., artifact_subdir="case1")` 时，将 profiler 输出保存到 `prof/case1/`
 - 测试用例运行超时时间为5分钟

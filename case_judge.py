@@ -3,11 +3,11 @@ import subprocess
 import json
 import glob
 import logging
-import argparse
 
 from utils.judge import build_empty_result
 from utils.judge import generate_final_result
 from utils.judge import load_baseline_data
+from utils.profiler import resolve_output_dir
 
 # 设置日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -24,10 +24,13 @@ BASELINE_DIR = os.path.join(ROOT_DIR, 'baseline')
 BASELINE_DATA_FILE = os.path.join(BASELINE_DIR, 'data.yaml')
 
 # 创建输出目录（如果不存在）
-def create_output_dir():
-    if not os.path.exists(OUTPUTS_DIR):
-        os.makedirs(OUTPUTS_DIR)
-        logger.info(f"Created output directory: {OUTPUTS_DIR}")
+def create_output_dir(testcase_name):
+    output_dir = resolve_output_dir(
+        OUTPUTS_DIR,
+        os.path.splitext(testcase_name)[0]
+    )
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir
 
 # 获取所有测试用例文件
 def get_testcase_files():
@@ -41,10 +44,11 @@ def get_testcase_files():
 # 运行单个测试用例
 def run_testcase(testcase_file):
     testcase_name = os.path.basename(testcase_file)
-    output_file = os.path.join(OUTPUTS_DIR, f"{testcase_name}.out")
-    error_file = os.path.join(OUTPUTS_DIR, f"{testcase_name}.err")
+    output_dir = create_output_dir(testcase_name)
+    output_file = os.path.join(output_dir, f"{testcase_name}.out")
+    error_file = os.path.join(output_dir, f"{testcase_name}.err")
     
-    logger.info(f"Running test case: {testcase_name}")
+    logger.info(f"Running test case: {testcase_name}, output directory: {output_dir}")
     
     try:
         # 运行测试用例脚本
@@ -103,13 +107,7 @@ def run_testcase(testcase_file):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='OJ Case Judge')
-    args = parser.parse_args()
-
     logger.info("Starting case evaluation...")
-    
-    # 创建输出目录
-    create_output_dir()
     
     # 获取所有测试用例
     testcase_files = get_testcase_files()

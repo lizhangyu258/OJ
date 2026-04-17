@@ -85,13 +85,14 @@ def run_profiler(
     warmup_steps: int,
     exec_steps: int,
     prof_config=None,
+    artifact_subdir: Optional[str] = None,
     run_name: str = ""
 ) -> Tuple[Optional[str], Optional[float]]:
     if prof_config is None:
         prof_config = get_default_prof_config()
     
     all_step_num = warmup_steps + exec_steps
-    prof_output_dir = setup_profiler_output(get_default_prof_dir())
+    prof_output_dir = setup_profiler_output(get_default_prof_dir(), artifact_subdir)
     
     prof = torch_npu.profiler.profile(
         activities=[
@@ -132,7 +133,8 @@ def benchmark(
     exec_steps: int = 10,
     rtol: float = 1e-5,
     atol: float = 1e-5,
-    prof_config=None
+    prof_config=None,
+    artifact_subdir: Optional[str] = None
 ) -> dict:
     setup_environment()
     
@@ -171,6 +173,7 @@ def benchmark(
         warmup_steps,
         exec_steps,
         prof_config,
+        artifact_subdir,
         "eager"
     )
     results["eager_time"] = eager_time
@@ -185,6 +188,7 @@ def benchmark(
         warmup_steps,
         exec_steps,
         prof_config,
+        artifact_subdir,
         "compile"
     )
     results["compile_time"] = compile_time
@@ -199,6 +203,7 @@ def benchmark(
         warmup_steps,
         exec_steps,
         prof_config,
+        artifact_subdir,
         "current"
     )
     results["current_time"] = current_time
