@@ -5,7 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 
 
-class TestCase5(torch.nn.Module):
+class FusedBroadcastReduction(torch.nn.Module):
     """带广播与归约的多段融合链路，适合作为高收益基线用例。"""
 
     def forward(self, x, y):
@@ -21,7 +21,7 @@ class TestCase5(torch.nn.Module):
 
 def build_testcase():
     device = "npu"
-    model = TestCase5().to(device)
+    model = FusedBroadcastReduction().to(device)
     x = torch.randn(16, 1000, device=device)
     y = torch.randn(16, 1000, device=device)
     return {
