@@ -1,11 +1,25 @@
 import logging
 import os
 
-from .benchmark import (
-    setup_environment,
-    get_default_prof_config,
-    benchmark
-)
+def _load_benchmark_exports():
+    from .benchmark import benchmark, get_default_prof_config, setup_environment
+
+    return setup_environment, get_default_prof_config, benchmark
+
+
+def setup_environment(*args, **kwargs):
+    setup_environment_impl, _, _ = _load_benchmark_exports()
+    return setup_environment_impl(*args, **kwargs)
+
+
+def get_default_prof_config(*args, **kwargs):
+    _, get_default_prof_config_impl, _ = _load_benchmark_exports()
+    return get_default_prof_config_impl(*args, **kwargs)
+
+
+def benchmark(*args, **kwargs):
+    _, _, benchmark_impl = _load_benchmark_exports()
+    return benchmark_impl(*args, **kwargs)
 
 def setup_logging(log_level=None):
     """
