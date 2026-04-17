@@ -12,7 +12,6 @@ OJ/
 ├── run.sh               # 运行脚本
 ├── testcases/           # 测试用例目录
 │   └── case1.py         # 示例测试用例
-├── outputs/             # 输出目录（自动生成）
 └── .gitignore           # Git忽略文件
 ```
 
@@ -61,7 +60,7 @@ run.sh脚本会自动：
 
 ### 3. 查看评测结果
 
-评测完成后，会在控制台输出JSON格式的评测结果，同时在`outputs/`目录下保存每个测试用例的详细输出。
+评测完成后，会在控制台输出JSON格式的评测结果。
 
 ## 测试用例编写
 
@@ -70,8 +69,8 @@ run.sh脚本会自动：
 1. 设置环境变量（如需要）
 2. 导入必要的库（torch, torch_npu等）
 3. 定义测试模型或算子
-4. 运行原始计算和编译优化后的计算
-5. 输出性能指标或相关信息
+4. 在 `main()` 中调用 `benchmark()`
+5. 返回 `benchmark()` 的结果字典
 
 示例测试用例（testcases/case1.py）：
 
@@ -121,10 +120,13 @@ print(codes[0])
     "testcase_details": [
       {
         "testcase": "case1.py",
-        "exit_code": 1,
-        "score": 0.0,
-        "has_output": false,
-        "has_error": true
+        "exit_code": 0,
+        "functional_passed": true,
+        "s_i": 1.25,
+        "eager_time": 100.0,
+        "compile_time": 50.0,
+        "current_time": 40.0,
+        "weight": 1.0
       }
     ]
   }
@@ -146,7 +148,7 @@ print(codes[0])
 
 当前脚本提供了以下预留接口，用于扩展性能指标的提取和评分：
 
-1. `parse_testcase_output()`：从测试输出中提取性能指标（如编译时间、执行时间、加速比等）
+1. `parse_testcase_output()`：从 `benchmark()` 返回的结构化结果中提取性能指标
 2. `calculate_testcase_score()`：根据性能指标加权计算评分
 
 ### 功能扩展
@@ -166,8 +168,5 @@ python3 -m unittest discover -s unittests
 
 ## 注意事项
 
-- 确保测试用例脚本具有正确的执行权限
-- 评测过程中会生成outputs目录，该目录已添加到.gitignore中
-- 每个测试用例的输出会保存到 `outputs/测试用例名/` 目录下，格式为`测试用例名.out`（标准输出）和`测试用例名.err`（错误输出）
+- 确保测试用例脚本提供 `main()` 函数，并返回 `benchmark()` 的结果字典
 - 每个测试用例可在调用 `benchmark(..., artifact_subdir="case1")` 时，将 profiler 输出保存到 `prof/case1/`
-- 测试用例运行超时时间为5分钟

@@ -1,13 +1,13 @@
 import os
-import subprocess
 import json
 import glob
+import importlib.util
 import logging
 
+from utils.judge import build_serializable_benchmark_result
 from utils.judge import build_empty_result
 from utils.judge import generate_final_result
 from utils.judge import load_baseline_data
-from utils.profiler import resolve_output_dir
 
 # 设置日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -17,20 +17,9 @@ logger = logging.getLogger(__name__)
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 # 测试用例目录
 TESTCASES_DIR = os.path.join(ROOT_DIR, 'testcases')
-# 输出目录
-OUTPUTS_DIR = os.path.join(ROOT_DIR, 'outputs')
 # Baseline数据目录
 BASELINE_DIR = os.path.join(ROOT_DIR, 'baseline')
 BASELINE_DATA_FILE = os.path.join(BASELINE_DIR, 'data.yaml')
-
-# 创建输出目录（如果不存在）
-def create_output_dir(testcase_name):
-    output_dir = resolve_output_dir(
-        OUTPUTS_DIR,
-        os.path.splitext(testcase_name)[0]
-    )
-    os.makedirs(output_dir, exist_ok=True)
-    return output_dir
 
 # 获取所有测试用例文件
 def get_testcase_files():
@@ -41,68 +30,46 @@ def get_testcase_files():
     logger.info(f"Found {len(testcase_files)} test cases: {[os.path.basename(f) for f in testcase_files]}")
     return testcase_files
 
+
+def load_testcase_module(testcase_file):
+    module_name = f"testcase_{os.path.splitext(os.path.basename(testcase_file))[0]}"
+    spec = importlib.util.spec_from_file_location(module_name, testcase_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load testcase module from {testcase_file}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 # 运行单个测试用例
 def run_testcase(testcase_file):
     testcase_name = os.path.basename(testcase_file)
-    output_dir = create_output_dir(testcase_name)
-    output_file = os.path.join(output_dir, f"{testcase_name}.out")
-    error_file = os.path.join(output_dir, f"{testcase_name}.err")
-    
-    logger.info(f"Running test case: {testcase_name}, output directory: {output_dir}")
-    
+    logger.info(f"Running test case: {testcase_name}")
+
     try:
-        # 运行测试用例脚本
-        with open(output_file, 'w') as out, open(error_file, 'w') as err:
-            process = subprocess.run(
-                ['python3', testcase_file],
-                stdout=out,
-                stderr=err,
-                timeout=300,  # 设置5分钟超时
-                check=False
-            )
-        
-        # 读取输出和错误
-        with open(output_file, 'r') as f:
-            stdout = f.read()
-        
-        with open(error_file, 'r') as f:
-            stderr = f.read()
-        
+        module = load_testcase_module(testcase_file)
+        if not hasattr(module, 'main'):
+            raise AttributeError(f"Testcase {testcase_name} does not define main()")
+
+        benchmark_result = build_serializable_benchmark_result(module.main())
+        if benchmark_result is None:
+            raise ValueError(f"Testcase {testcase_name} returned no benchmark result")
+
         result = {
             'testcase': testcase_name,
-            'exit_code': process.returncode,
-            'stdout': stdout,
-            'stderr': stderr,
-            'output_file': output_file,
-            'error_file': error_file
+            'exit_code': 0,
+            'benchmark_result': benchmark_result,
+            'error_message': '',
         }
-        
-        if process.returncode == 0:
-            logger.info(f"Test case {testcase_name} completed successfully")
-        else:
-            logger.warning(f"Test case {testcase_name} failed with exit code {process.returncode}")
-        
+        logger.info(f"Test case {testcase_name} completed successfully")
         return result
-        
-    except subprocess.TimeoutExpired:
-        logger.error(f"Test case {testcase_name} timed out")
-        return {
-            'testcase': testcase_name,
-            'exit_code': -1,
-            'stdout': '',
-            'stderr': 'Timeout expired after 300 seconds',
-            'output_file': output_file,
-            'error_file': error_file
-        }
     except Exception as e:
-        logger.error(f"Error running test case {testcase_name}: {str(e)}")
+        logger.exception(f"Error running test case {testcase_name}")
         return {
             'testcase': testcase_name,
-            'exit_code': -2,
-            'stdout': '',
-            'stderr': f'Unexpected error: {str(e)}',
-            'output_file': output_file,
-            'error_file': error_file
+            'exit_code': 1,
+            'benchmark_result': None,
+            'error_message': str(e),
         }
 
 

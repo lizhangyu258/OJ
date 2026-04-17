@@ -1,14 +1,7 @@
 import logging
-import os
-import re
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
-
-FUNCTIONAL_PASS_TOKEN = "Precision test result: Passed"
-EAGER_TIME_PATTERN = re.compile(r"\[eager\] Average execution time:\s*([\d.]+)\s*us")
-COMPILE_TIME_PATTERN = re.compile(r"\[compile\] Average execution time:\s*([\d.]+)\s*us")
-CURRENT_TIME_PATTERN = re.compile(r"\[current\] Average execution time:\s*([\d.]+)\s*us")
 
 
 def load_baseline_data(baseline_data_file):
@@ -16,50 +9,48 @@ def load_baseline_data(baseline_data_file):
     return {}
 
 
-def is_functional_test_passed(stdout):
-    """Return whether the testcase output indicates a functional pass."""
-    return FUNCTIONAL_PASS_TOKEN in stdout if stdout else False
+def _coerce_optional_float(value):
+    if value is None:
+        return None
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        logger.warning("Failed to convert %r to float", value)
+        return None
 
 
-def get_testcase_text(testcase_result):
-    """Return combined testcase output text from stdout and stderr."""
-    parts = [testcase_result.get("stdout", ""), testcase_result.get("stderr", "")]
-    return "\n".join(part for part in parts if part)
+def build_serializable_benchmark_result(benchmark_result):
+    """Keep only the benchmark fields needed by the judge."""
+    if benchmark_result is None:
+        return None
+
+    return {
+        "precision_passed": bool(benchmark_result.get("precision_passed", False)),
+        "eager_time": _coerce_optional_float(benchmark_result.get("eager_time")),
+        "compile_time": _coerce_optional_float(benchmark_result.get("compile_time")),
+        "current_time": _coerce_optional_float(benchmark_result.get("current_time")),
+        "max_diff": _coerce_optional_float(benchmark_result.get("max_diff")),
+        "speedup": _coerce_optional_float(benchmark_result.get("speedup")),
+    }
 
 
 def parse_testcase_output(testcase_result):
-    """Parse testcase output and extract performance metrics (eager, compile, and current)."""
-    output_text = get_testcase_text(testcase_result)
+    """Extract testcase metrics from structured benchmark data."""
+    benchmark_result = build_serializable_benchmark_result(testcase_result.get("benchmark_result"))
     parsed_data = {
-        "functional_passed": is_functional_test_passed(output_text),
-        "eager_time": None,
-        "compile_time": None,
-        "current_time": None,
+        "functional_passed": benchmark_result["precision_passed"] if benchmark_result is not None else False,
+        "eager_time": benchmark_result["eager_time"] if benchmark_result is not None else None,
+        "compile_time": benchmark_result["compile_time"] if benchmark_result is not None else None,
+        "current_time": benchmark_result["current_time"] if benchmark_result is not None else None,
     }
-
-    match_eager = EAGER_TIME_PATTERN.search(output_text)
-    if match_eager:
-        try:
-            parsed_data["eager_time"] = float(match_eager.group(1))
-        except ValueError:
-            logger.warning("Failed to parse eager_time from: %s", match_eager.group(1))
-
-    match_compile = COMPILE_TIME_PATTERN.search(output_text)
-    if match_compile:
-        try:
-            parsed_data["compile_time"] = float(match_compile.group(1))
-        except ValueError:
-            logger.warning("Failed to parse compile_time from: %s", match_compile.group(1))
-
-    match_current = CURRENT_TIME_PATTERN.search(output_text)
-    if match_current:
-        try:
-            parsed_data["current_time"] = float(match_current.group(1))
-        except ValueError:
-            logger.warning("Failed to parse current_time from: %s", match_current.group(1))
-
-    logger.info("Parsed testcase - functional_passed: %s, eager_time: %s us, compile_time: %s us, current_time: %s us",
-                parsed_data["functional_passed"], parsed_data["eager_time"], parsed_data["compile_time"], parsed_data["current_time"])
+    logger.info(
+        "Parsed testcase result - functional_passed: %s, eager_time: %s us, compile_time: %s us, current_time: %s us",
+        parsed_data["functional_passed"],
+        parsed_data["eager_time"],
+        parsed_data["compile_time"],
+        parsed_data["current_time"],
+    )
     return parsed_data
 
 
@@ -118,8 +109,6 @@ def calculate_testcase_score(testcase_result, parsed_output, baseline_data):
 def generate_final_result(testcase_results, baseline_data, now=None):
     """Generate the final result from all testcase results according to score.md."""
     timestamp = (now or datetime.now()).isoformat()
-    all_passed = all(result["exit_code"] == 0 for result in testcase_results)
-    verdict = "AC" if all_passed else "WA"
 
     parsed_outputs = []
     testcase_s_i = []  # s_i for each test case
@@ -143,6 +132,12 @@ def generate_final_result(testcase_results, baseline_data, now=None):
 
     n = len(testcase_results)
     F = sum(functional_indicators) / n if n > 0 else 0.0
+    passed_testcases = sum(
+        1
+        for result, parsed_output in zip(testcase_results, parsed_outputs)
+        if result["exit_code"] == 0 and parsed_output.get("functional_passed", False)
+    )
+    failed_testcases = n - passed_testcases
 
     sum_I_w = 0.0  # sum I_i * w_i
     sum_I_w_s = 0.0  # sum I_i * w_i * s_i
@@ -159,12 +154,13 @@ def generate_final_result(testcase_results, baseline_data, now=None):
     P = sum_I_w_s / sum_I_w if sum_I_w > 0 else 0.0
 
     S = 0.4 * F + 0.6 * P
+    verdict = "AC" if failed_testcases == 0 else "WA"
 
     detail = {
         "timestamp": timestamp,
         "total_testcases": n,
-        "passed_testcases": sum(1 for result in testcase_results if result["exit_code"] == 0),
-        "failed_testcases": sum(1 for result in testcase_results if result["exit_code"] != 0),
+        "passed_testcases": passed_testcases,
+        "failed_testcases": failed_testcases,
         "functional_score": F,
         "performance_score": P,
         "final_score": S,

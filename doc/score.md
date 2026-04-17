@@ -42,11 +42,11 @@ I_i =
 \end{cases}
 $$
 
-其中，功能测试是否通过，通过日志中是否包含字符串 `Precision test result: Passed` 来判定。
+其中，功能测试是否通过，通过 `benchmark()` 返回结果中的 `precision_passed` 字段来判定。
 
 也就是说：
 
-- 日志中包含 `Precision test result: Passed`，则 $I_i = 1$
+- `precision_passed = true`，则 $I_i = 1$
 - 否则 $I_i = 0$
 
 ### 2.3 功能测试总得分
@@ -154,7 +154,7 @@ $$
 
 ## 6. 实现约束说明
 
-- 功能通过判定依据：日志中包含 `Precision test result: Passed`
+- 功能通过判定依据：`benchmark()` 返回结果中的 `precision_passed`
 - 性能耗时来源：Ascend 机器上的实际运行耗时
 - `eager`：对应未融合的小算子耗时之和，即 $b_{1,i}$
 - `compile`：对应融合算子基线耗时，即 $b_{2,i}$

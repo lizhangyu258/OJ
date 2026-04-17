@@ -29,6 +29,7 @@ def main():
         exec_steps=10,
         artifact_subdir=artifact_subdir
     )
+    return results
 
 
 if __name__ == "__main__":
