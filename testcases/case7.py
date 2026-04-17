@@ -6,16 +6,18 @@ import torch
 
 
 def vector_reduction(x):
-    """向量归约操作：求和、最大值、平均值"""
-    sum_val = x.sum(dim=-1)
-    max_val = x.max(dim=-1)[0]
-    mean_val = x.mean(dim=-1)
-    return sum_val + max_val - mean_val
+    """归约与broadcast回写结合，提升融合收益。"""
+    sum_val = x.sum(dim=-1, keepdim=True)
+    mean_val = x.mean(dim=-1, keepdim=True)
+    sq_mean = (x * x).mean(dim=-1, keepdim=True)
+    normalized = (x - mean_val) * torch.rsqrt(sq_mean + 1e-4)
+    fused = normalized + sum_val * 0.0005 + x * 0.125
+    return fused.sum(dim=-1)
 
 
 def build_testcase():
     device = 'npu'
-    x = torch.randn((128, 512), requires_grad=False, dtype=torch.float32, device=device)
+    x = torch.randn((256, 2048), requires_grad=False, dtype=torch.float32, device=device)
     return {
         "model_or_func": vector_reduction,
         "inputs": (x,),
