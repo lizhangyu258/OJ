@@ -1,3 +1,4 @@
+import argparse
 import os
 import json
 import glob
@@ -22,6 +23,16 @@ TESTCASES_DIR = os.path.join(ROOT_DIR, 'testcases')
 BASELINE_DIR = os.path.join(ROOT_DIR, 'baseline')
 BASELINE_DATA_FILE = os.path.join(BASELINE_DIR, 'data.yaml')
 TESTCASE_TIMEOUT_SECONDS = 300
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Run testcase evaluation.")
+    parser.add_argument(
+        "--clean-up",
+        action="store_true",
+        help="Remove generated artifact directories after evaluation finishes.",
+    )
+    return parser.parse_args(argv)
 
 # 获取所有测试用例文件
 def get_testcase_files():
@@ -166,35 +177,47 @@ def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS, benchm
         }
 
 
-def main():
+def main(argv=None):
     from utils import setup_logging
+    from utils.profiler import cleanup_directories
 
+    args = parse_args(argv)
     setup_logging()
     logger.info("Starting case evaluation...")
-    
-    # 获取所有测试用例
-    testcase_files = get_testcase_files()
-    
-    if not testcase_files:
-        logger.warning("No test cases found in testcases directory")
-        final_result = build_empty_result()
-        return
-    
-    # 运行所有测试用例
-    testcase_results = []
-    for testcase_file in testcase_files:
-        result = run_testcase(testcase_file)
-        testcase_results.append(result)
-    
-    # 生成最终结果
-    baseline_data = load_baseline_data(BASELINE_DATA_FILE)
-    final_result = generate_final_result(
-        testcase_results,
-        baseline_data
-    )
-    
-    logger.info(f"final_result json: {json.dumps(final_result, indent=2)}")
-    logger.info("Case evaluation completed")
+
+    try:
+        # 获取所有测试用例
+        testcase_files = get_testcase_files()
+
+        if not testcase_files:
+            logger.warning("No test cases found in testcases directory")
+            final_result = build_empty_result()
+            logger.info(f"final_result json: {json.dumps(final_result, indent=2)}")
+            logger.info("Case evaluation completed")
+            return final_result
+
+        # 运行所有测试用例
+        testcase_results = []
+        for testcase_file in testcase_files:
+            result = run_testcase(testcase_file)
+            testcase_results.append(result)
+
+        # 生成最终结果
+        baseline_data = load_baseline_data(BASELINE_DATA_FILE)
+        final_result = generate_final_result(
+            testcase_results,
+            baseline_data
+        )
+
+        logger.info(f"final_result json: {json.dumps(final_result, indent=2)}")
+        logger.info("Case evaluation completed")
+        return final_result
+    finally:
+        if args.clean_up:
+            try:
+                cleanup_directories()
+            except Exception:
+                logger.exception("Failed to clean up generated artifact directories")
 
 if __name__ == '__main__':
     main()

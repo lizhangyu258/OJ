@@ -7,18 +7,30 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from case_judge import parse_args
 from case_judge import run_testcase
 from utils.judge import build_empty_result
 from utils.judge import calculate_testcase_score
 from utils.judge import extract_testcase_metrics
 from utils.judge import generate_final_result
 from utils.judge import load_baseline_data
+from utils.profiler import cleanup_directories
 from utils.profiler import get_step_time_from_csv
 from utils.profiler import resolve_output_dir
 from utils.profiler import setup_profiler_output
 
 
 class CaseJudgeCoreTests(unittest.TestCase):
+    def test_parse_args_defaults_clean_up_to_false(self):
+        args = parse_args([])
+
+        self.assertFalse(args.clean_up)
+
+    def test_parse_args_enables_clean_up_option(self):
+        args = parse_args(["--clean-up"])
+
+        self.assertTrue(args.clean_up)
+
     def test_extract_testcase_metrics_reads_required_fields_from_raw_result(self):
         raw_result = {
             "precision_passed": True,
@@ -399,6 +411,48 @@ class ProfilerTests(unittest.TestCase):
             output_dir = setup_profiler_output(temp_dir, "test0", print_log=False)
             self.assertTrue(output_dir.startswith(os.path.join(temp_dir, "test0")))
             self.assertTrue(os.path.isdir(output_dir))
+
+    def test_cleanup_directories_removes_single_directory_when_present(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_dir = Path(temp_dir) / "traced_graph_cache"
+            (cache_dir / "subdir").mkdir(parents=True)
+            (cache_dir / "subdir" / "artifact.txt").write_text("demo", encoding="utf-8")
+
+            removed_count = cleanup_directories([str(cache_dir)], print_log=False)
+
+            self.assertEqual(removed_count, 1)
+            self.assertFalse(cache_dir.exists())
+
+    def test_cleanup_directories_removes_prof_and_traced_graph_cache(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            prof_dir = Path(temp_dir) / "prof"
+            cache_dir = Path(temp_dir) / "traced_graph_cache"
+            prof_dir.mkdir()
+            cache_dir.mkdir()
+
+            removed_count = cleanup_directories(
+                [str(prof_dir), str(cache_dir)],
+                print_log=False,
+            )
+
+            self.assertEqual(removed_count, 2)
+            self.assertFalse(prof_dir.exists())
+            self.assertFalse(cache_dir.exists())
+
+    def test_cleanup_directories_skips_missing_directories(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            prof_dir = Path(temp_dir) / "prof"
+            cache_dir = Path(temp_dir) / "traced_graph_cache"
+            prof_dir.mkdir()
+
+            removed_count = cleanup_directories(
+                [str(prof_dir), str(cache_dir)],
+                print_log=False,
+            )
+
+            self.assertEqual(removed_count, 1)
+            self.assertFalse(prof_dir.exists())
+            self.assertFalse(cache_dir.exists())
 
     def test_get_step_time_from_csv_returns_none_when_file_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:

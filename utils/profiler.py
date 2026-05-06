@@ -1,7 +1,8 @@
 import os
 import logging
 import csv
-from typing import Optional, Tuple
+import shutil
+from typing import Iterable, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,58 @@ def get_default_prof_dir() -> str:
     utils_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(utils_dir)
     return os.path.join(project_root, "prof")
+
+
+def get_default_traced_graph_cache_dir() -> str:
+    """
+    获取默认 traced_graph_cache 目录路径（项目根目录下的 traced_graph_cache 目录）
+    """
+    utils_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(utils_dir)
+    return os.path.join(project_root, "traced_graph_cache")
+
+
+def get_default_cleanup_dirs() -> Tuple[str, ...]:
+    """
+    获取默认需要清理的目录列表。
+    """
+    return (
+        get_default_prof_dir(),
+        get_default_traced_graph_cache_dir(),
+    )
+
+
+def cleanup_directories(
+    target_dirs: Optional[Iterable[str]] = None,
+    print_log: bool = True
+) -> int:
+    """
+    删除运行评测生成的目录产物。
+
+    Args:
+        target_dirs: 要删除的目录列表；不传时清理默认产物目录
+        print_log: 是否打印日志
+
+    Returns:
+        实际删除的目录数量
+    """
+    if target_dirs is None:
+        target_dirs = get_default_cleanup_dirs()
+
+    removed_count = 0
+    for target_dir in target_dirs:
+        if not os.path.exists(target_dir):
+            if print_log:
+                logger.info(f"Directory does not exist, skip cleanup: {target_dir}")
+            continue
+        if not os.path.isdir(target_dir):
+            raise NotADirectoryError(f"Cleanup target is not a directory: {target_dir}")
+
+        shutil.rmtree(target_dir)
+        removed_count += 1
+        if print_log:
+            logger.info(f"Removed directory: {target_dir}")
+    return removed_count
 
 
 def create_prof_output_dir(base_dir: str) -> Tuple[str, str]:

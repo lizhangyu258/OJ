@@ -52,11 +52,18 @@ chmod +x run.sh
 ./run.sh
 ```
 
+如需在评测结束后自动删除项目根目录生成的 `prof/` 和 `traced_graph_cache/` 目录：
+
+```bash
+./run.sh --clean-up
+```
+
 run.sh脚本会自动：
 - 检查bishengir-compile和bishengir-opt工具是否存在
 - 添加执行权限
 - 将工具路径添加到环境变量
 - 运行主评测脚本
+- 当传入 `--clean-up` 时，在评测完成后删除项目根目录下的 `prof/` 和 `traced_graph_cache/` 目录
 
 ### 3. 查看评测结果
 
