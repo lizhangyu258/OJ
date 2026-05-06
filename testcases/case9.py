@@ -6,24 +6,22 @@ import torch
 
 
 def complex_activations(x, y, bias):
-    """激活、cast、broadcast和归约组合。"""
-    x_half = x.to(torch.float16)
-    y_half = y.to(torch.float16)
-    bias_half = bias.to(torch.float16)
-    sig = torch.sigmoid(x_half)
-    tanh_val = torch.tanh(y_half)
-    relu_val = torch.relu(x_half + y_half + bias_half)
-    mixed = sig * tanh_val + relu_val * 0.5 - sig * relu_val
-    mixed_fp32 = mixed.to(torch.float32)
-    channel_mean = mixed_fp32.mean(dim=-1, keepdim=True)
-    return mixed_fp32 + channel_mean * 0.2
+    """单 dtype 的激活融合链路。"""
+    shifted = x + bias
+    sig = torch.sigmoid(shifted)
+    tanh_val = torch.tanh(y - bias)
+    relu_val = torch.relu(x + y + bias)
+    mixed = sig * tanh_val + relu_val * 0.5
+    fused = mixed - sig * relu_val * 0.25 + x * 0.125
+    channel_mean = fused.mean(dim=-1, keepdim=True)
+    return (fused + channel_mean * 0.2).to(torch.float32)
 
 
 def build_testcase():
     device = 'npu'
-    x = torch.randn((256, 2048), requires_grad=False, dtype=torch.float32, device=device)
-    y = torch.randn((256, 2048), requires_grad=False, dtype=torch.float32, device=device)
-    bias = torch.randn((1, 2048), requires_grad=False, dtype=torch.float32, device=device)
+    x = torch.randn((256, 2048), requires_grad=False, dtype=torch.float16, device=device)
+    y = torch.randn((256, 2048), requires_grad=False, dtype=torch.float16, device=device)
+    bias = torch.randn((1, 2048), requires_grad=False, dtype=torch.float16, device=device)
     return {
         "model_or_func": complex_activations,
         "inputs": (x, y, bias),

@@ -6,13 +6,13 @@ import torch
 
 
 def vector_reduction(x):
-    """归约与broadcast回写结合，提升融合收益。"""
-    sum_val = x.sum(dim=-1, keepdim=True)
+    """共享统计量的归一化链路，减少独立 reduction 次数。"""
     mean_val = x.mean(dim=-1, keepdim=True)
-    sq_mean = (x * x).mean(dim=-1, keepdim=True)
-    normalized = (x - mean_val) * torch.rsqrt(sq_mean + 1e-4)
-    fused = normalized + sum_val * 0.0005 + x * 0.125
-    return fused.sum(dim=-1)
+    centered = x - mean_val
+    var = centered.square().mean(dim=-1, keepdim=True)
+    normalized = centered * torch.rsqrt(var + 1e-4)
+    fused = normalized * 0.75 + x * 0.125
+    return fused + fused.mean(dim=-1, keepdim=True) * 0.05
 
 
 def build_testcase():

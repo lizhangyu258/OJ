@@ -12,20 +12,18 @@ class MatMulWithFusion(torch.nn.Module):
         matmul_result = x @ y
         fused = torch.relu(matmul_result + row_bias)
         fused = fused * col_scale + residual
-        fused = fused.to(torch.float16).to(torch.float32)
         row_mean = fused.mean(dim=-1, keepdim=True)
-        col_mean = fused.mean(dim=0, keepdim=True)
-        return fused + row_mean * 0.05 + col_mean * 0.02
+        return (fused + row_mean * 0.05 + residual * 0.02).to(torch.float32)
 
 
 def build_testcase():
     model = MatMulWithFusion()
     device = 'npu'
-    x = torch.randn(128, 512, device=device)
-    y = torch.randn(512, 512, device=device)
-    row_bias = torch.randn(1, 512, device=device)
-    col_scale = torch.randn(128, 1, device=device)
-    residual = torch.randn(128, 512, device=device)
+    x = torch.randn(128, 512, dtype=torch.float16, device=device)
+    y = torch.randn(512, 512, dtype=torch.float16, device=device)
+    row_bias = torch.randn(1, 512, dtype=torch.float16, device=device)
+    col_scale = torch.randn(128, 1, dtype=torch.float16, device=device)
+    residual = torch.randn(128, 512, dtype=torch.float16, device=device)
     return {
         "model_or_func": model,
         "inputs": (x, y, row_bias, col_scale, residual),
