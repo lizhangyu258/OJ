@@ -7,6 +7,8 @@ import logging
 import signal
 from contextlib import contextmanager
 
+import yaml
+
 from utils.judge import build_empty_result
 from utils.judge import generate_final_result
 from utils.judge import load_baseline_data
@@ -22,6 +24,7 @@ TESTCASES_DIR = os.path.join(ROOT_DIR, 'testcases')
 # Baseline数据目录
 BASELINE_DIR = os.path.join(ROOT_DIR, 'baseline')
 BASELINE_DATA_FILE = os.path.join(BASELINE_DIR, 'data.yaml')
+BIN_CONFIG_FILE = os.path.join(ROOT_DIR, 'config.yaml')
 TESTCASE_TIMEOUT_SECONDS = 300
 
 
@@ -33,6 +36,36 @@ def parse_args(argv=None):
         help="Remove generated artifact directories after evaluation finishes.",
     )
     return parser.parse_args(argv)
+
+
+def load_bin_config(config_file=BIN_CONFIG_FILE):
+    if not os.path.exists(config_file):
+        logger.info("Bin config file not found, skip loading: %s", config_file)
+        return None
+
+    with open(config_file, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f) or {}
+
+    if not isinstance(config, dict):
+        raise ValueError(f"Bin config must be a mapping: {config_file}")
+
+    bin_config = config.get("bin")
+    if bin_config is None:
+        logger.info("No 'bin' section found in config file: %s", config_file)
+        return None
+    if not isinstance(bin_config, dict):
+        raise ValueError(f"'bin' section must be a mapping: {config_file}")
+
+    normalized_config = {}
+    for key in ("baseline", "current"):
+        value = bin_config.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"bin.{key} must be a non-empty string: {config_file}")
+        normalized_config[key] = value.strip()
+
+    return normalized_config or None
 
 # 获取所有测试用例文件
 def get_testcase_files():
@@ -130,7 +163,7 @@ def testcase_timeout(timeout_seconds):
         signal.signal(signal.SIGALRM, previous_handler)
 
 # 运行单个测试用例
-def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS, benchmark_runner=None):
+def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS, benchmark_runner=None, bin_config=None):
     testcase_name = os.path.basename(testcase_file)
     logger.info(f"Running test case: {testcase_name}")
 
@@ -142,6 +175,8 @@ def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS, benchm
 
             testcase_spec = validate_testcase_spec(module.build_testcase(), testcase_name)
             testcase_spec = normalize_testcase_spec(testcase_spec, testcase_name)
+            if bin_config is not None:
+                testcase_spec["bin_config"] = dict(bin_config)
 
             if benchmark_runner is None:
                 from utils.benchmark import benchmark as benchmark_runner_impl
@@ -188,6 +223,7 @@ def main(argv=None):
     try:
         # 获取所有测试用例
         testcase_files = get_testcase_files()
+        bin_config = load_bin_config()
 
         if not testcase_files:
             logger.warning("No test cases found in testcases directory")
@@ -199,7 +235,7 @@ def main(argv=None):
         # 运行所有测试用例
         testcase_results = []
         for testcase_file in testcase_files:
-            result = run_testcase(testcase_file)
+            result = run_testcase(testcase_file, bin_config=bin_config)
             testcase_results.append(result)
 
         # 生成最终结果

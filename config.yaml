@@ -1,0 +1,3 @@
+bin:
+  baseline: /usr/local/Ascend/latest/compiler/bin
+  current: /usr/local/Ascend/latest/compiler/bin

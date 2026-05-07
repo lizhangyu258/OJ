@@ -27,7 +27,17 @@ OJ/
 
 ### 1. 准备工作
 
-确保bishengir-compile和bishengir-opt工具已放置在项目根目录下。
+在项目根目录准备 `config.yaml`，用于指定两套 `bishengir-compile` 和 `bishengir-opt` 所在目录：
+
+```yaml
+bin:
+  baseline: /usr/local/Ascend/latest/compiler/bin
+  current: /coursegrader/submit
+```
+
+- `bin.baseline`：基线工具目录，用于计算 `compile_time`
+- `bin.current`：当前被测工具目录，用于计算 `current_time`
+- `eager_time` 不依赖这两个目录
 
 安装 Python 依赖：
 
@@ -59,9 +69,8 @@ chmod +x run.sh
 ```
 
 run.sh脚本会自动：
-- 检查bishengir-compile和bishengir-opt工具是否存在
-- 添加执行权限
-- 将工具路径添加到环境变量
+- 调用 `check_bin_path.py` 检查 `config.yaml` 中 `bin.current` 目录下的 `bishengir-compile` 和 `bishengir-opt` 是否存在
+- 将当前被测工具目录添加到环境变量
 - 运行主评测脚本
 - 当传入 `--clean-up` 时，在评测完成后删除项目根目录下的 `prof/` 和 `traced_graph_cache/` 目录
 
@@ -167,3 +176,4 @@ python3 -m unittest discover -s unittests
 
 - 确保测试用例脚本提供 `build_testcase()` 函数，并返回包含 `model_or_func` 和 `inputs` 的配置字典
 - `case_judge.py` 会统一补充 `artifact_subdir`、默认 `device`、默认 warmup/exec 步数，并调用 `benchmark()`
+- `benchmark()` 会使用 `config.yaml` 中的 `bin.baseline` 编译基线程序，使用 `bin.current` 编译当前被测程序

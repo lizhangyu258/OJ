@@ -1,5 +1,6 @@
 import os
 import sys
+import subprocess
 import tempfile
 import unittest
 from datetime import datetime
@@ -8,6 +9,7 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from case_judge import parse_args
+from case_judge import load_bin_config
 from case_judge import run_testcase
 from utils.judge import build_empty_result
 from utils.judge import calculate_testcase_score
@@ -30,6 +32,62 @@ class CaseJudgeCoreTests(unittest.TestCase):
         args = parse_args(["--clean-up"])
 
         self.assertTrue(args.clean_up)
+
+    def test_load_bin_config_reads_bin_yaml(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                """bin:
+  baseline: /opt/baseline/bin
+  current: /opt/current/bin
+""",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                load_bin_config(str(config_path)),
+                {
+                    "baseline": "/opt/baseline/bin",
+                    "current": "/opt/current/bin",
+                },
+            )
+
+    def test_load_bin_config_returns_none_when_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            self.assertIsNone(load_bin_config(str(config_path)))
+
+    def test_check_bin_path_script_validates_current_bin_dir(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            bin_dir = temp_path / "bin"
+            bin_dir.mkdir()
+            (bin_dir / "bishengir-compile").write_text("", encoding="utf-8")
+            (bin_dir / "bishengir-opt").write_text("", encoding="utf-8")
+            (temp_path / "config.yaml").write_text(
+                f"""bin:
+  current: {bin_dir}
+""",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "/Users/ayame/workspace/OJ/check_bin_path.py",
+                    "--config",
+                    str(temp_path / "config.yaml"),
+                    "--key",
+                    "current",
+                ],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(os.path.realpath(result.stdout.strip()), os.path.realpath(str(bin_dir)))
 
     def test_extract_testcase_metrics_reads_required_fields_from_raw_result(self):
         raw_result = {
@@ -294,6 +352,42 @@ class CaseJudgeCoreTests(unittest.TestCase):
         self.assertEqual(benchmark_calls[0]["warmup_steps"], 5)
         self.assertEqual(benchmark_calls[0]["exec_steps"], 10)
         self.assertEqual(benchmark_calls[0]["artifact_subdir"], "temp_case")
+
+    def test_run_testcase_passes_bin_config_to_benchmark(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            testcase_path = Path(temp_dir) / "temp_case.py"
+            testcase_path.write_text(
+                """def build_testcase():
+    return {
+        "model_or_func": "demo",
+        "inputs": (),
+    }
+""",
+                encoding="utf-8",
+            )
+
+            benchmark_calls = []
+
+            def fake_benchmark_runner(**kwargs):
+                benchmark_calls.append(kwargs)
+                return {
+                    "precision_passed": True,
+                    "eager_time": 100.0,
+                    "compile_time": 50.0,
+                    "current_time": 40.0,
+                }
+
+            result = run_testcase(
+                str(testcase_path),
+                benchmark_runner=fake_benchmark_runner,
+                bin_config={"baseline": "/opt/base/bin", "current": "/opt/current/bin"},
+            )
+
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(
+            benchmark_calls[0]["bin_config"],
+            {"baseline": "/opt/base/bin", "current": "/opt/current/bin"},
+        )
 
     def test_run_testcase_wraps_exceptions(self):
         with tempfile.TemporaryDirectory() as temp_dir:

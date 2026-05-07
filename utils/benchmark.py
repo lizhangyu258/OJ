@@ -2,12 +2,56 @@ import os
 import logging
 import torch
 import torch_npu
+from contextlib import contextmanager
 from torch._inductor.utils import run_and_get_code
 from typing import Any, Callable, Optional, Tuple
 
 from utils.profiler import setup_profiler_output, find_and_parse_step_trace, get_default_prof_dir
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_tool_bin_dir(bin_config: Optional[dict], key: str) -> Optional[str]:
+    if not bin_config:
+        return None
+
+    bin_dir = bin_config.get(key)
+    if bin_dir is None:
+        return None
+    if not isinstance(bin_dir, str) or not bin_dir.strip():
+        raise ValueError(f"bin_config[{key!r}] must be a non-empty string")
+
+    resolved_bin_dir = os.path.abspath(bin_dir.strip())
+    if not os.path.isdir(resolved_bin_dir):
+        raise FileNotFoundError(f"Configured bin directory does not exist: {resolved_bin_dir}")
+
+    for tool_name in ("bishengir-compile", "bishengir-opt"):
+        tool_path = os.path.join(resolved_bin_dir, tool_name)
+        if not os.path.isfile(tool_path):
+            raise FileNotFoundError(f"Required tool not found: {tool_path}")
+
+    return resolved_bin_dir
+
+
+@contextmanager
+def _patched_tool_bin_dir(bin_dir: Optional[str]):
+    if not bin_dir:
+        yield
+        return
+
+    original_path = os.environ.get("PATH", "")
+    os.environ["PATH"] = f"{bin_dir}{os.pathsep}{original_path}" if original_path else bin_dir
+    logger.info("Using bishengir tools from: %s", bin_dir)
+    try:
+        yield
+    finally:
+        os.environ["PATH"] = original_path
+
+
+def _reset_compile_state():
+    reset_func = getattr(getattr(torch, "_dynamo", None), "reset", None)
+    if callable(reset_func):
+        reset_func()
 
 
 def setup_environment():
@@ -46,7 +90,8 @@ def _prepare_model_and_compile(
     model_or_func: Any,
     inputs: Tuple[Any, ...],
     device: str,
-    compile_options: Optional[dict]
+    compile_options: Optional[dict],
+    tool_bin_dir: Optional[str] = None,
 ):
     """
     公共辅助函数：准备模型并编译
@@ -56,9 +101,11 @@ def _prepare_model_and_compile(
         model.to(device)
     else:
         model = model_or_func
-    
-    compile_func = torch.compile(model, **compile_options)
-    compile_out, codes = run_and_get_code(compile_func, *inputs)
+
+    _reset_compile_state()
+    with _patched_tool_bin_dir(tool_bin_dir):
+        compile_func = torch.compile(model, **compile_options)
+        compile_out, codes = run_and_get_code(compile_func, *inputs)
     logger.info(f"compile_out: {compile_out}")
     logger.info(f"codes[0]: {codes[0]}")
     
@@ -134,7 +181,8 @@ def benchmark(
     rtol: float = 1e-5,
     atol: float = 1e-5,
     prof_config=None,
-    artifact_subdir: Optional[str] = None
+    artifact_subdir: Optional[str] = None,
+    bin_config: Optional[dict] = None,
 ) -> dict:
     setup_environment()
     
@@ -144,10 +192,24 @@ def benchmark(
     if prof_config is None:
         prof_config = get_default_prof_config()
     
-    model, compile_func, compile_out, codes = _prepare_model_and_compile(
-        model_or_func, inputs, device, compile_options
+    baseline_bin_dir = _resolve_tool_bin_dir(bin_config, "baseline")
+    current_bin_dir = _resolve_tool_bin_dir(bin_config, "current")
+
+    model, baseline_compile_func, _, _ = _prepare_model_and_compile(
+        model_or_func,
+        inputs,
+        device,
+        compile_options,
+        tool_bin_dir=baseline_bin_dir,
     )
-    
+    _, current_compile_func, compile_out, codes = _prepare_model_and_compile(
+        model_or_func,
+        inputs,
+        device,
+        compile_options,
+        tool_bin_dir=current_bin_dir,
+    )
+
     results = {
         "compile_out": compile_out,
         "codes": codes,
@@ -157,7 +219,7 @@ def benchmark(
         eager_result = model(*inputs)
     else:
         eager_result = model(*inputs)
-    graph_result = compile_func(*inputs)
+    graph_result = current_compile_func(*inputs)
     
     passed, max_diff = precision_check(eager_result, graph_result, rtol=rtol, atol=atol)
     _log_precision_result(passed, eager_result, graph_result, max_diff)
@@ -180,10 +242,8 @@ def benchmark(
     if eager_time is not None:
         logger.info(f"[eager] Average execution time: {eager_time} us")
     
-    # TODO: 实现compile_time与current_time的程序来源切换逻辑
-    # 当前 compile_time 应使用 CANN 包标准安装目录下的 bishengir-compile/bishengir-opt 被测程序
     _, compile_time = run_profiler(
-        compile_func,
+        baseline_compile_func,
         inputs,
         warmup_steps,
         exec_steps,
@@ -195,10 +255,8 @@ def benchmark(
     if compile_time is not None:
         logger.info(f"[compile] Average execution time: {compile_time} us")
     
-    # TODO: 实现compile_time与current_time的程序来源切换逻辑
-    # 当前 current_time 应使用用户上传的被测程序
     _, current_time = run_profiler(
-        compile_func,
+        current_compile_func,
         inputs,
         warmup_steps,
         exec_steps,
