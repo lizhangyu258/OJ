@@ -4,8 +4,11 @@ import json
 import glob
 import importlib.util
 import logging
+import sys
+import traceback
 import signal
 from contextlib import contextmanager
+from contextlib import redirect_stdout
 
 import yaml
 
@@ -14,7 +17,7 @@ from utils.judge import generate_final_result
 from utils.judge import load_baseline_data
 
 # 设置日志配置
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stderr)
 logger = logging.getLogger(__name__)
 
 # 项目根目录
@@ -26,6 +29,28 @@ BASELINE_DIR = os.path.join(ROOT_DIR, 'baseline')
 BASELINE_DATA_FILE = os.path.join(BASELINE_DIR, 'data.yaml')
 BIN_CONFIG_FILE = os.path.join(ROOT_DIR, 'config.yaml')
 TESTCASE_TIMEOUT_SECONDS = 300
+
+
+def build_error_result(exc):
+    return {
+        "verdict": "CE",
+        "rank": {"rank": -1},
+        "score": 0,
+        "comment": str(exc),
+        "detail": traceback.format_exc(),
+    }
+
+
+def format_platform_result(result):
+    platform_result = dict(result)
+    detail = platform_result.get("detail")
+    if not isinstance(detail, str):
+        platform_result["detail"] = json.dumps(detail, ensure_ascii=False, default=str)
+    return platform_result
+
+
+def emit_result(result):
+    print(json.dumps(format_platform_result(result), ensure_ascii=False, default=str), flush=True)
 
 
 def parse_args(argv=None):
@@ -256,4 +281,10 @@ def main(argv=None):
                 logger.exception("Failed to clean up generated artifact directories")
 
 if __name__ == '__main__':
-    main()
+    try:
+        with redirect_stdout(sys.stderr):
+            result = main()
+        emit_result(result)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Evaluation failed before producing a result")
+        emit_result(build_error_result(exc))

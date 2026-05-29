@@ -118,30 +118,13 @@ def build_testcase():
   "rank": {
     "rank": final_marks
   },
-  "detail": {
-    "timestamp": "2026-03-26T12:31:33.107036",
-    "total_testcases": 1,
-    "passed_testcases": 0,
-    "failed_testcases": 1,
-    "testcase_details": [
-      {
-        "testcase": "case1.py",
-        "exit_code": 0,
-        "functional_passed": true,
-        "s_i": 1.25,
-        "eager_time": 100.0,
-        "compile_time": 50.0,
-        "current_time": 40.0,
-        "weight": 1.0
-      }
-    ]
-  }
+  "detail": "{\"timestamp\":\"2026-03-26T12:31:33.107036\",\"total_testcases\":1,\"passed_testcases\":0,\"failed_testcases\":1}"
 }
 ```
 
 - `verdict`：评测结果，"AC"表示所有测试用例通过，"WA"表示存在失败的测试用例
 - `rank.rank`：最终评分，目前为测试用例的平均得分
-- `detail`：详细评测信息，包含：
+- `detail`：字符串类型。内容是序列化后的 JSON，可反序列化得到详细评测信息，包含：
   - `timestamp`：评测时间
   - `total_testcases`：测试用例总数
   - `passed_testcases`：通过的测试用例数

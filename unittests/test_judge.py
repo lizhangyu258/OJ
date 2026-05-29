@@ -1,14 +1,19 @@
+import io
+import json
 import os
 import sys
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime
 from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from case_judge import parse_args
+from case_judge import emit_result
+from case_judge import format_platform_result
 from case_judge import load_bin_config
 from case_judge import run_testcase
 from utils.judge import build_empty_result
@@ -23,6 +28,43 @@ from utils.profiler import setup_profiler_output
 
 
 class CaseJudgeCoreTests(unittest.TestCase):
+    def test_format_platform_result_serializes_detail_to_string(self):
+        result = {
+            "verdict": "WA",
+            "rank": {"rank": 0.0},
+            "detail": {"failed_testcases": 1},
+        }
+
+        platform_result = format_platform_result(result)
+
+        self.assertIsInstance(platform_result["detail"], str)
+        self.assertEqual(json.loads(platform_result["detail"]), {"failed_testcases": 1})
+
+    def test_emit_result_prints_detail_as_string(self):
+        result = {
+            "verdict": "WA",
+            "rank": {"rank": 0.0},
+            "detail": {"failed_testcases": 1},
+        }
+        stdout = io.StringIO()
+
+        with redirect_stdout(stdout):
+            emit_result(result)
+
+        emitted = json.loads(stdout.getvalue())
+        self.assertIsInstance(emitted["detail"], str)
+
+    def test_format_platform_result_keeps_string_detail(self):
+        result = {
+            "verdict": "CE",
+            "rank": {"rank": -1},
+            "detail": "traceback",
+        }
+
+        platform_result = format_platform_result(result)
+
+        self.assertEqual(platform_result["detail"], "traceback")
+
     def test_parse_args_defaults_clean_up_to_false(self):
         args = parse_args([])
 

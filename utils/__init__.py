@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 
 def setup_logging(log_level=None):
     """
@@ -14,13 +15,24 @@ def setup_logging(log_level=None):
     
     numeric_level = getattr(logging, log_level, logging.INFO)
     
-    logging.basicConfig(
-        level=numeric_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    root_logger = logging.getLogger()
+    root_logger.setLevel(numeric_level)
+
+    if root_logger.handlers:
+        formatter = logging.Formatter(log_format)
+        for handler in root_logger.handlers:
+            handler.setLevel(numeric_level)
+            handler.setFormatter(formatter)
+    else:
+        logging.basicConfig(
+            level=numeric_level,
+            format=log_format,
+            stream=sys.stderr
+        )
     
-    # 显式设置所有 utils 子模块的 logger 级别
-    for module_name in ['utils.benchmark', 'utils.profiler', 'utils.judge']:
+    # 显式设置项目 logger 级别
+    for module_name in ['case_judge', 'utils.benchmark', 'utils.profiler', 'utils.judge']:
         logger = logging.getLogger(module_name)
         logger.setLevel(numeric_level)
         logger.propagate = True

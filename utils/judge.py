@@ -145,6 +145,7 @@ def generate_final_result(testcase_results, baseline_data, now=None):
     P = sum_I_w_s / sum_I_w if sum_I_w > 0 else 0.0
 
     S = 0.4 * F + 0.6 * P
+    score = max(0, round(S * 100))
     verdict = "AC" if failed_testcases == 0 else "WA"
 
     detail = {
@@ -173,6 +174,7 @@ def generate_final_result(testcase_results, baseline_data, now=None):
 
     return {
         "verdict": verdict,
+        "score": score,
         "rank": {
             "rank": S,
         },
@@ -184,6 +186,7 @@ def build_empty_result(now=None):
     """Build the result for the empty-testcase case."""
     return {
         "verdict": "WA",
+        "score": 0,
         "rank": {"rank": 0.0},
         "detail": {
             "timestamp": (now or datetime.now()).isoformat(),
