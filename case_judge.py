@@ -137,8 +137,8 @@ def validate_testcase_spec(testcase_spec, testcase_name):
 def normalize_testcase_spec(testcase_spec, testcase_name):
     normalized_spec = dict(testcase_spec)
     normalized_spec.setdefault("device", "npu")
-    normalized_spec.setdefault("warmup_steps", 5)
-    normalized_spec.setdefault("exec_steps", 10)
+    normalized_spec.setdefault("warmup_steps", 10)
+    normalized_spec.setdefault("exec_steps", 30)
     normalized_spec.setdefault("artifact_subdir", os.path.splitext(testcase_name)[0])
     return normalized_spec
 

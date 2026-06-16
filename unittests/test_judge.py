@@ -391,8 +391,8 @@ class CaseJudgeCoreTests(unittest.TestCase):
         self.assertEqual(benchmark_calls[0]["model_or_func"], "demo")
         self.assertEqual(benchmark_calls[0]["inputs"], (1, 2))
         self.assertEqual(benchmark_calls[0]["device"], "npu")
-        self.assertEqual(benchmark_calls[0]["warmup_steps"], 5)
-        self.assertEqual(benchmark_calls[0]["exec_steps"], 10)
+        self.assertEqual(benchmark_calls[0]["warmup_steps"], 10)
+        self.assertEqual(benchmark_calls[0]["exec_steps"], 30)
         self.assertEqual(benchmark_calls[0]["artifact_subdir"], "temp_case")
 
     def test_run_testcase_passes_bin_config_to_benchmark(self):
@@ -625,6 +625,20 @@ col1,col2,300.0,col4,col5
             result = get_step_time_from_csv(str(csv_path))
             self.assertIsNotNone(result)
             self.assertAlmostEqual(result, 200.0)
+
+    def test_get_step_time_from_csv_filters_outliers_for_large_sample(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "test.csv"
+            values = [100.0] * 20 + [1000.0] * 10
+            rows = "\n".join(f"col1,col2,{value},col4,col5" for value in values)
+            csv_path.write_text(
+                f"header1,header2,header3,header4,header5\n{rows}\n",
+                encoding="utf-8",
+            )
+
+            result = get_step_time_from_csv(str(csv_path))
+            self.assertIsNotNone(result)
+            self.assertAlmostEqual(result, 100.0)
 
     def test_get_step_time_from_csv_returns_none_when_no_valid_rows(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -2,6 +2,8 @@ import os
 import logging
 import csv
 import shutil
+import math
+import statistics
 from typing import Iterable, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -105,12 +107,58 @@ def create_prof_output_dir(base_dir: str) -> Tuple[str, str]:
     return output_dir, unique_id
 
 
+def _filter_outlier_step_times(
+    step_times,
+    max_outliers: int = 10,
+    min_samples: int = 10,
+    modified_z_threshold: float = 3.5,
+):
+    if len(step_times) <= min_samples or max_outliers <= 0:
+        return step_times, 0
+
+    median_time = statistics.median(step_times)
+    deviations = [abs(step_time - median_time) for step_time in step_times]
+    mad = statistics.median(deviations)
+    max_remove_count = min(max_outliers, len(step_times) - min_samples)
+    if max_remove_count <= 0:
+        return step_times, 0
+
+    if mad > 0:
+        outlier_candidates = []
+        for index, step_time in enumerate(step_times):
+            modified_z_score = 0.6745 * abs(step_time - median_time) / mad
+            if modified_z_score > modified_z_threshold:
+                outlier_candidates.append((modified_z_score, index))
+    else:
+        relative_threshold = abs(median_time) * 0.05
+        absolute_threshold = max(relative_threshold, 1e-12)
+        outlier_candidates = [
+            (abs(step_time - median_time), index)
+            for index, step_time in enumerate(step_times)
+            if abs(step_time - median_time) > absolute_threshold
+        ]
+
+    if not outlier_candidates:
+        return step_times, 0
+
+    outlier_candidates.sort(reverse=True)
+    removed_indices = {
+        index for _, index in outlier_candidates[:max_remove_count]
+    }
+    filtered_step_times = [
+        step_time
+        for index, step_time in enumerate(step_times)
+        if index not in removed_indices
+    ]
+    return filtered_step_times, len(removed_indices)
+
+
 def get_step_time_from_csv(csv_path: str) -> Optional[float]:
     """
-    从op_statistic.csv文件中读取第3列（索引2）的step算子计算时间，计算平均执行时间
+    从step_trace_time.csv文件中读取第3列（索引2）的step算子计算时间，剔除异常值后计算平均执行时间
     
     Args:
-        csv_path: op_statistic.csv文件的完整路径
+        csv_path: step_trace_time.csv文件的完整路径
     
     Returns:
         平均执行时间（float），如果读取失败则返回None
@@ -128,8 +176,7 @@ def get_step_time_from_csv(csv_path: str) -> Optional[float]:
                 logger.warning(f"CSV file has less than 2 rows: {csv_path}")
                 return None
             
-            total_time = 0.0
-            valid_rows = 0
+            step_times = []
             
             for i, values in enumerate(rows[1:], start=2):
                 if len(values) < 3:
@@ -140,18 +187,30 @@ def get_step_time_from_csv(csv_path: str) -> Optional[float]:
                 
                 try:
                     step_time = float(step_time_str)
-                    total_time += step_time
-                    valid_rows += 1
+                    if not math.isfinite(step_time):
+                        logger.warning(f"Non-finite step time '{step_time_str}' in row {i}, skipping")
+                        continue
+                    step_times.append(step_time)
                 except ValueError:
                     logger.warning(f"Cannot convert '{step_time_str}' to float in row {i}, skipping")
                     continue
             
-            if valid_rows == 0:
+            if not step_times:
                 logger.warning(f"No valid data rows found in CSV: {csv_path}")
                 return None
             
-            avg_time = total_time / valid_rows
-            logger.info(f"Average step execution time: {avg_time} (sum of {valid_rows} rows: {total_time})")
+            filtered_step_times, removed_count = _filter_outlier_step_times(step_times)
+            total_time = sum(filtered_step_times)
+            avg_time = total_time / len(filtered_step_times)
+            logger.info(
+                "Average step execution time: %s "
+                "(used %s/%s rows after outlier filter, removed: %s, sum: %s)",
+                avg_time,
+                len(filtered_step_times),
+                len(step_times),
+                removed_count,
+                total_time,
+            )
             return avg_time
                 
     except Exception as e:
