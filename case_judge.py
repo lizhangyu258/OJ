@@ -4,6 +4,7 @@ import json
 import glob
 import importlib.util
 import logging
+import math
 import sys
 import traceback
 import signal
@@ -51,6 +52,39 @@ def format_platform_result(result):
 
 def emit_result(result):
     print(json.dumps(format_platform_result(result), ensure_ascii=False, default=str), flush=True)
+
+
+def _is_positive_number(value):
+    if isinstance(value, bool):
+        return False
+    if not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(value) and value > 0
+
+
+def validate_final_result_metrics(final_result):
+    detail = final_result.get("detail", {})
+    testcase_details = detail.get("testcase_details", [])
+    invalid_items = []
+
+    for testcase_detail in testcase_details:
+        if testcase_detail.get("exit_code") != 0:
+            continue
+
+        testcase_name = testcase_detail.get("testcase", "<unknown>")
+        for metric_name in ("eager_time", "compile_time", "current_time"):
+            metric_value = testcase_detail.get(metric_name)
+            if not _is_positive_number(metric_value):
+                invalid_items.append(f"{testcase_name}.{metric_name}={metric_value!r}")
+
+    if invalid_items:
+        raise ValueError(
+            "Incomplete profiler result in final JSON: "
+            + ", ".join(invalid_items)
+            + ". Please retry the evaluation externally."
+        )
+
+    return final_result
 
 
 def parse_args(argv=None):
@@ -269,6 +303,7 @@ def main(argv=None):
             testcase_results,
             baseline_data
         )
+        validate_final_result_metrics(final_result)
 
         logger.info(f"final_result json: {json.dumps(final_result, indent=2)}")
         logger.info("Case evaluation completed")

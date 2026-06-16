@@ -16,6 +16,7 @@ from case_judge import emit_result
 from case_judge import format_platform_result
 from case_judge import load_bin_config
 from case_judge import run_testcase
+from case_judge import validate_final_result_metrics
 from utils.judge import build_empty_result
 from utils.judge import calculate_testcase_score
 from utils.judge import extract_testcase_metrics
@@ -349,6 +350,41 @@ class CaseJudgeCoreTests(unittest.TestCase):
         final_result = generate_final_result(testcase_results, {}, now=datetime(2026, 4, 16, 12, 0, 0))
 
         self.assertEqual(final_result["detail"]["testcase_details"][0]["error_message"], "build_testcase() returned None")
+
+    def test_validate_final_result_metrics_accepts_valid_times(self):
+        final_result = {
+            "detail": {
+                "testcase_details": [
+                    {
+                        "testcase": "case1.py",
+                        "exit_code": 0,
+                        "eager_time": 100.0,
+                        "compile_time": 50.0,
+                        "current_time": 40.0,
+                    }
+                ]
+            }
+        }
+
+        self.assertIs(validate_final_result_metrics(final_result), final_result)
+
+    def test_validate_final_result_metrics_rejects_missing_profiler_time(self):
+        final_result = {
+            "detail": {
+                "testcase_details": [
+                    {
+                        "testcase": "case1.py",
+                        "exit_code": 0,
+                        "eager_time": 100.0,
+                        "compile_time": None,
+                        "current_time": 40.0,
+                    }
+                ]
+            }
+        }
+
+        with self.assertRaisesRegex(ValueError, "Please retry the evaluation externally"):
+            validate_final_result_metrics(final_result)
 
     def test_run_testcase_builds_spec_and_returns_raw_result(self):
         with tempfile.TemporaryDirectory() as temp_dir:

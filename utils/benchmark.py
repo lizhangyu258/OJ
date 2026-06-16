@@ -133,14 +133,16 @@ def run_profiler(
     exec_steps: int,
     prof_config=None,
     artifact_subdir: Optional[str] = None,
-    run_name: str = ""
+    run_name: str = "",
+    tool_bin_dir: Optional[str] = None,
 ) -> Tuple[Optional[str], Optional[float]]:
     if prof_config is None:
         prof_config = get_default_prof_config()
     
     all_step_num = warmup_steps + exec_steps
+    run_name_str = f" ({run_name})" if run_name else ""
     prof_output_dir = setup_profiler_output(get_default_prof_dir(), artifact_subdir)
-    
+
     prof = torch_npu.profiler.profile(
         activities=[
             torch_npu.profiler.ProfilerActivity.CPU,
@@ -155,17 +157,18 @@ def run_profiler(
         experimental_config=prof_config,
         on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(prof_output_dir)
     )
-    
+
     prof.start()
-    with torch.no_grad():
-        for _ in range(all_step_num):
-            outputs = func(*inputs)
-            if torch.npu.is_available():
-                torch.npu.synchronize()
-            prof.step()
-    prof.stop()
-    
-    run_name_str = f" ({run_name})" if run_name else ""
+    try:
+        with torch.no_grad(), _patched_tool_bin_dir(tool_bin_dir):
+            for _ in range(all_step_num):
+                outputs = func(*inputs)
+                if torch.npu.is_available():
+                    torch.npu.synchronize()
+                prof.step()
+    finally:
+        prof.stop()
+
     logger.info(f"\nProfiler results{run_name_str} saved to: {prof_output_dir}")
     avg_exec_time = find_and_parse_step_trace(prof_output_dir)
     return prof_output_dir, avg_exec_time
@@ -236,7 +239,7 @@ def benchmark(
         exec_steps,
         prof_config,
         artifact_subdir,
-        "eager"
+        "eager",
     )
     results["eager_time"] = eager_time
     if eager_time is not None:
@@ -249,7 +252,8 @@ def benchmark(
         exec_steps,
         prof_config,
         artifact_subdir,
-        "compile"
+        "compile",
+        tool_bin_dir=baseline_bin_dir,
     )
     results["compile_time"] = compile_time
     if compile_time is not None:
@@ -262,7 +266,8 @@ def benchmark(
         exec_steps,
         prof_config,
         artifact_subdir,
-        "current"
+        "current",
+        tool_bin_dir=current_bin_dir,
     )
     results["current_time"] = current_time
     if passed and eager_time is not None and compile_time is not None and compile_time > 0 and eager_time > 0:
