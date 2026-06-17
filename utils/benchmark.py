@@ -164,6 +164,7 @@ def _prepare_model_and_compile(
     _reset_compile_state()
     cache_context = _compile_cache_environment(cache_dir) if cache_dir else nullcontext()
     with cache_context, _patched_tool_bin_dir(tool_bin_dir):
+        torch._dynamo.reset()
         compile_func = torch.compile(model, **compile_options)
         compile_out, codes = run_and_get_code(compile_func, *inputs)
     logger.info(f"compile_out: {compile_out}")
