@@ -5,6 +5,7 @@ import os
 import sys
 
 from case_judge import load_bin_config
+from utils.tool_validation import validate_tool_bin_dir
 
 
 def parse_args():
@@ -21,19 +22,6 @@ def parse_args():
         help="Which configured bin path to validate and print.",
     )
     return parser.parse_args()
-
-
-def validate_tool_bin_dir(bin_dir: str, key: str):
-    resolved_bin_dir = os.path.abspath(bin_dir)
-    if not os.path.isdir(resolved_bin_dir):
-        raise FileNotFoundError(f"Configured bin.{key} directory does not exist: {resolved_bin_dir}")
-
-    for tool_name in ("bishengir-compile", "bishengir-opt"):
-        tool_path = os.path.join(resolved_bin_dir, tool_name)
-        if not os.path.isfile(tool_path):
-            raise FileNotFoundError(f"Required tool for bin.{key} not found: {tool_path}")
-
-    return resolved_bin_dir
 
 
 def main():

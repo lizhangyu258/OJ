@@ -28,6 +28,13 @@ from utils.profiler import resolve_output_dir
 from utils.profiler import setup_profiler_output
 
 
+def write_fake_tool(path: Path, version_text: str = "fake tool 1.0\n"):
+    path.write_text(f"#!/bin/sh\necho {version_text!r}\nexit 0\n", encoding="utf-8")
+    with path.open("ab") as f:
+        f.truncate(11 * 1024 * 1024)
+    path.chmod(0o755)
+
+
 class CaseJudgeCoreTests(unittest.TestCase):
     def test_format_platform_result_serializes_detail_to_string(self):
         result = {
@@ -105,8 +112,8 @@ class CaseJudgeCoreTests(unittest.TestCase):
             temp_path = Path(temp_dir)
             bin_dir = temp_path / "bin"
             bin_dir.mkdir()
-            (bin_dir / "bishengir-compile").write_text("", encoding="utf-8")
-            (bin_dir / "bishengir-opt").write_text("", encoding="utf-8")
+            write_fake_tool(bin_dir / "bishengir-compile")
+            write_fake_tool(bin_dir / "bishengir-opt")
             (temp_path / "config.yaml").write_text(
                 f"""bin:
   current: {bin_dir}
@@ -131,6 +138,38 @@ class CaseJudgeCoreTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertEqual(os.path.realpath(result.stdout.strip()), os.path.realpath(str(bin_dir)))
+
+    def test_check_bin_path_script_rejects_empty_tools(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            bin_dir = temp_path / "bin"
+            bin_dir.mkdir()
+            (bin_dir / "bishengir-compile").write_text("", encoding="utf-8")
+            (bin_dir / "bishengir-opt").write_text("", encoding="utf-8")
+            (temp_path / "config.yaml").write_text(
+                f"""bin:
+  current: {bin_dir}
+""",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "/Users/ayame/workspace/OJ/check_bin_path.py",
+                    "--config",
+                    str(temp_path / "config.yaml"),
+                    "--key",
+                    "current",
+                ],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("too small", result.stderr)
 
     def test_extract_testcase_metrics_reads_required_fields_from_raw_result(self):
         raw_result = {

@@ -1,14 +1,31 @@
-import os
 import logging
+import os
+import shutil
+import uuid
 import torch
 import torch_npu
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from torch._inductor.utils import run_and_get_code
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
-from utils.profiler import setup_profiler_output, find_and_parse_step_trace, get_default_prof_dir
+from utils.profiler import find_and_parse_step_trace
+from utils.profiler import get_default_prof_dir
+from utils.profiler import get_default_traced_graph_cache_dir
+from utils.profiler import resolve_output_dir
+from utils.profiler import setup_profiler_output
+from utils.tool_validation import validate_tool_bin_dir
 
 logger = logging.getLogger(__name__)
+
+CACHE_ENV_NAMES = (
+    "TORCHINDUCTOR_CACHE_DIR",
+    "TORCH_COMPILE_CACHE_DIR",
+    "TRITON_CACHE_DIR",
+    "TRACED_GRAPH_CACHE_DIR",
+    "BISHENGIR_CACHE_DIR",
+    "MLIR_CACHE_DIR",
+    "XDG_CACHE_HOME",
+)
 
 
 def _resolve_tool_bin_dir(bin_config: Optional[dict], key: str) -> Optional[str]:
@@ -21,16 +38,7 @@ def _resolve_tool_bin_dir(bin_config: Optional[dict], key: str) -> Optional[str]
     if not isinstance(bin_dir, str) or not bin_dir.strip():
         raise ValueError(f"bin_config[{key!r}] must be a non-empty string")
 
-    resolved_bin_dir = os.path.abspath(bin_dir.strip())
-    if not os.path.isdir(resolved_bin_dir):
-        raise FileNotFoundError(f"Configured bin directory does not exist: {resolved_bin_dir}")
-
-    for tool_name in ("bishengir-compile", "bishengir-opt"):
-        tool_path = os.path.join(resolved_bin_dir, tool_name)
-        if not os.path.isfile(tool_path):
-            raise FileNotFoundError(f"Required tool not found: {tool_path}")
-
-    return resolved_bin_dir
+    return validate_tool_bin_dir(bin_dir.strip(), key)
 
 
 @contextmanager
@@ -46,6 +54,56 @@ def _patched_tool_bin_dir(bin_dir: Optional[str]):
         yield
     finally:
         os.environ["PATH"] = original_path
+
+
+@contextmanager
+def _patched_environment(updates: Dict[str, str]):
+    original_values = {}
+    missing_keys = set()
+    for key, value in updates.items():
+        if key in os.environ:
+            original_values[key] = os.environ[key]
+        else:
+            missing_keys.add(key)
+        os.environ[key] = value
+
+    try:
+        yield
+    finally:
+        for key in updates:
+            if key in missing_keys:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = original_values[key]
+
+
+def _cleanup_compile_cache(cache_dir: str):
+    if os.path.exists(cache_dir):
+        if not os.path.isdir(cache_dir):
+            raise NotADirectoryError(f"Compile cache path is not a directory: {cache_dir}")
+        shutil.rmtree(cache_dir)
+    os.makedirs(cache_dir, exist_ok=True)
+
+
+def _make_phase_cache_dir(artifact_subdir: Optional[str], phase: str) -> str:
+    cache_root = resolve_output_dir(get_default_traced_graph_cache_dir(), artifact_subdir)
+    return os.path.join(cache_root, f"{phase}-{uuid.uuid4().hex}")
+
+
+@contextmanager
+def _compile_cache_environment(cache_dir: str, *, clean: bool = True):
+    resolved_cache_dir = os.path.abspath(cache_dir)
+    if clean:
+        _cleanup_compile_cache(resolved_cache_dir)
+    else:
+        os.makedirs(resolved_cache_dir, exist_ok=True)
+
+    updates = {name: os.path.join(resolved_cache_dir, name.lower()) for name in CACHE_ENV_NAMES}
+    for value in updates.values():
+        os.makedirs(value, exist_ok=True)
+
+    with _patched_environment(updates):
+        yield
 
 
 def _reset_compile_state():
@@ -92,6 +150,7 @@ def _prepare_model_and_compile(
     device: str,
     compile_options: Optional[dict],
     tool_bin_dir: Optional[str] = None,
+    cache_dir: Optional[str] = None,
 ):
     """
     公共辅助函数：准备模型并编译
@@ -103,7 +162,8 @@ def _prepare_model_and_compile(
         model = model_or_func
 
     _reset_compile_state()
-    with _patched_tool_bin_dir(tool_bin_dir):
+    cache_context = _compile_cache_environment(cache_dir) if cache_dir else nullcontext()
+    with cache_context, _patched_tool_bin_dir(tool_bin_dir):
         compile_func = torch.compile(model, **compile_options)
         compile_out, codes = run_and_get_code(compile_func, *inputs)
     logger.info(f"compile_out: {compile_out}")
@@ -135,6 +195,7 @@ def run_profiler(
     artifact_subdir: Optional[str] = None,
     run_name: str = "",
     tool_bin_dir: Optional[str] = None,
+    cache_dir: Optional[str] = None,
 ) -> Tuple[Optional[str], Optional[float]]:
     if prof_config is None:
         prof_config = get_default_prof_config()
@@ -160,7 +221,8 @@ def run_profiler(
 
     prof.start()
     try:
-        with torch.no_grad(), _patched_tool_bin_dir(tool_bin_dir):
+        cache_context = _compile_cache_environment(cache_dir, clean=False) if cache_dir else nullcontext()
+        with torch.no_grad(), cache_context, _patched_tool_bin_dir(tool_bin_dir):
             for _ in range(all_step_num):
                 outputs = func(*inputs)
                 if torch.npu.is_available():
@@ -197,6 +259,8 @@ def benchmark(
     
     baseline_bin_dir = _resolve_tool_bin_dir(bin_config, "baseline")
     current_bin_dir = _resolve_tool_bin_dir(bin_config, "current")
+    baseline_cache_dir = _make_phase_cache_dir(artifact_subdir, "baseline")
+    current_cache_dir = _make_phase_cache_dir(artifact_subdir, "current")
 
     model, baseline_compile_func, _, _ = _prepare_model_and_compile(
         model_or_func,
@@ -204,6 +268,7 @@ def benchmark(
         device,
         compile_options,
         tool_bin_dir=baseline_bin_dir,
+        cache_dir=baseline_cache_dir,
     )
     _, current_compile_func, compile_out, codes = _prepare_model_and_compile(
         model_or_func,
@@ -211,6 +276,7 @@ def benchmark(
         device,
         compile_options,
         tool_bin_dir=current_bin_dir,
+        cache_dir=current_cache_dir,
     )
 
     results = {
@@ -254,6 +320,7 @@ def benchmark(
         artifact_subdir,
         "compile",
         tool_bin_dir=baseline_bin_dir,
+        cache_dir=baseline_cache_dir,
     )
     results["compile_time"] = compile_time
     if compile_time is not None:
@@ -268,6 +335,7 @@ def benchmark(
         artifact_subdir,
         "current",
         tool_bin_dir=current_bin_dir,
+        cache_dir=current_cache_dir,
     )
     results["current_time"] = current_time
     if passed and eager_time is not None and compile_time is not None and compile_time > 0 and eager_time > 0:
@@ -284,5 +352,5 @@ def benchmark(
     if current_time is not None:
         logger.info(f"[current] Average execution time: {current_time} us")
     logger.info("========================")
-    
+
     return results
