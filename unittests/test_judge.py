@@ -16,6 +16,7 @@ from case_judge import emit_result
 from case_judge import format_platform_result
 from case_judge import load_bin_config
 from case_judge import run_testcase
+from case_judge import validate_bin_config_tools
 from case_judge import validate_final_result_metrics
 from utils.judge import build_empty_result
 from utils.judge import calculate_testcase_score
@@ -169,7 +170,18 @@ class CaseJudgeCoreTests(unittest.TestCase):
             )
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("too small", result.stderr)
+        self.assertIn("Illegal bishengir tool binary", result.stderr)
+        self.assertNotIn("bytes", result.stderr)
+
+    def test_validate_bin_config_tools_rejects_illegal_tools_before_testcases(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bin_dir = Path(temp_dir) / "bin"
+            bin_dir.mkdir()
+            (bin_dir / "bishengir-compile").write_text("", encoding="utf-8")
+            (bin_dir / "bishengir-opt").write_text("", encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "Illegal bishengir tool binary"):
+                validate_bin_config_tools({"current": str(bin_dir)})
 
     def test_extract_testcase_metrics_reads_required_fields_from_raw_result(self):
         raw_result = {

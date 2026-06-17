@@ -126,6 +126,18 @@ def load_bin_config(config_file=BIN_CONFIG_FILE):
 
     return normalized_config or None
 
+
+def validate_bin_config_tools(bin_config):
+    if not bin_config:
+        return
+
+    from utils.tool_validation import validate_tool_bin_dir
+
+    for key in ("baseline", "current"):
+        bin_dir = bin_config.get(key)
+        if bin_dir:
+            validate_tool_bin_dir(bin_dir, key)
+
 # 获取所有测试用例文件
 def get_testcase_files():
     testcase_pattern = os.path.join(TESTCASES_DIR, '*.py')
@@ -283,6 +295,7 @@ def main(argv=None):
         # 获取所有测试用例
         testcase_files = get_testcase_files()
         bin_config = load_bin_config()
+        validate_bin_config_tools(bin_config)
 
         if not testcase_files:
             logger.warning("No test cases found in testcases directory")

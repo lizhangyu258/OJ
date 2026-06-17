@@ -10,6 +10,14 @@ MIN_TOOL_SIZE_BYTES = 10 * 1024 * 1024
 VERSION_TIMEOUT_SECONDS = 15
 
 
+class ToolValidationError(RuntimeError):
+    """Raised when a configured bishengir tool cannot be accepted for judging."""
+
+
+class IllegalToolBinaryError(ToolValidationError):
+    """Raised when a submitted bishengir tool is not a valid binary."""
+
+
 def _short_output(value: str, limit: int = 1000) -> str:
     value = value.strip()
     if len(value) <= limit:
@@ -25,17 +33,14 @@ def validate_tool_file(
 ) -> str:
     resolved_tool_path = os.path.abspath(tool_path)
     if not os.path.isfile(resolved_tool_path):
-        raise FileNotFoundError(f"Required tool not found: {resolved_tool_path}")
+        raise ToolValidationError(f"Required tool not found: {resolved_tool_path}")
 
     file_size = os.stat(resolved_tool_path).st_size
     if file_size <= min_size_bytes:
-        raise ValueError(
-            f"Required tool is too small: {resolved_tool_path} "
-            f"({file_size} bytes <= {min_size_bytes} bytes)"
-        )
+        raise IllegalToolBinaryError("Illegal bishengir tool binary")
 
     if not os.access(resolved_tool_path, os.X_OK):
-        raise PermissionError(f"Required tool is not executable: {resolved_tool_path}")
+        raise IllegalToolBinaryError("Illegal bishengir tool binary")
 
     try:
         result = subprocess.run(
@@ -47,19 +52,12 @@ def validate_tool_file(
             timeout=version_timeout_seconds,
         )
     except subprocess.TimeoutExpired as exc:
-        raise TimeoutError(
-            f"Tool version probe timed out after {version_timeout_seconds}s: {resolved_tool_path}"
-        ) from exc
+        raise IllegalToolBinaryError("Illegal bishengir tool binary") from exc
     except OSError as exc:
-        raise RuntimeError(f"Failed to execute tool directly: {resolved_tool_path}: {exc}") from exc
+        raise IllegalToolBinaryError("Illegal bishengir tool binary") from exc
 
     if result.returncode != 0:
-        raise RuntimeError(
-            f"Tool version probe failed: {resolved_tool_path} "
-            f"(exit_code={result.returncode}, "
-            f"stdout={_short_output(result.stdout)!r}, "
-            f"stderr={_short_output(result.stderr)!r})"
-        )
+        raise IllegalToolBinaryError("Illegal bishengir tool binary")
 
     version_text = _short_output(result.stdout or result.stderr)
     if version_text:
@@ -79,7 +77,7 @@ def validate_tool_bin_dir(
 ) -> str:
     resolved_bin_dir = os.path.abspath(bin_dir)
     if not os.path.isdir(resolved_bin_dir):
-        raise FileNotFoundError(f"Configured bin.{key} directory does not exist: {resolved_bin_dir}")
+        raise ToolValidationError(f"Configured bin.{key} directory does not exist: {resolved_bin_dir}")
 
     for tool_name in tool_names:
         validate_tool_file(
