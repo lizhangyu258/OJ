@@ -249,15 +249,8 @@ def benchmark(
     baseline_cache_dir = _make_phase_cache_dir(artifact_subdir, "baseline")
     current_cache_dir = _make_phase_cache_dir(artifact_subdir, "current")
 
-    model, baseline_compile_func, _, _ = _prepare_model_and_compile(
-        model_or_func,
-        inputs,
-        device,
-        compile_options,
-        tool_bin_dir=baseline_bin_dir,
-        cache_dir=baseline_cache_dir,
-    )
-    _, current_compile_func, compile_out, codes = _prepare_model_and_compile(
+    # --- Phase 1: current (compile first, cold cache — avoid baseline pollution) ---
+    model, current_compile_func, compile_out, codes = _prepare_model_and_compile(
         model_or_func,
         inputs,
         device,
@@ -270,21 +263,39 @@ def benchmark(
         "compile_out": compile_out,
         "codes": codes,
     }
-    
+
+    # Precision check: eager reference vs current compiled output
     if isinstance(model, torch.nn.Module):
         eager_result = model(*inputs)
     else:
         eager_result = model(*inputs)
     graph_result = current_compile_func(*inputs)
-    
+
     passed, max_diff = precision_check(eager_result, graph_result, rtol=rtol, atol=atol)
     _log_precision_result(passed, eager_result, graph_result, max_diff)
-    
+
     results["precision_passed"] = passed
     results["eager_result"] = eager_result
     results["graph_result"] = graph_result
     results["max_diff"] = max_diff
-    
+
+    # --- Phase 2: profile current BEFORE baseline touches the device ---
+    _, current_time = run_profiler(
+        current_compile_func,
+        inputs,
+        warmup_steps,
+        exec_steps,
+        prof_config,
+        artifact_subdir,
+        "current",
+        tool_bin_dir=current_bin_dir,
+        cache_dir=current_cache_dir,
+    )
+    results["current_time"] = current_time
+    if current_time is not None:
+        logger.info(f"[current] Average execution time: {current_time} us")
+
+    # --- Phase 3: profile eager (uncompiled reference) ---
     _, eager_time = run_profiler(
         model if isinstance(model, torch.nn.Module) else model_or_func,
         inputs,
@@ -297,7 +308,18 @@ def benchmark(
     results["eager_time"] = eager_time
     if eager_time is not None:
         logger.info(f"[eager] Average execution time: {eager_time} us")
-    
+
+    # --- Phase 4: compile baseline (last, so it cannot warm caches for current) ---
+    _, baseline_compile_func, _, _ = _prepare_model_and_compile(
+        model_or_func,
+        inputs,
+        device,
+        compile_options,
+        tool_bin_dir=baseline_bin_dir,
+        cache_dir=baseline_cache_dir,
+    )
+
+    # --- Phase 5: profile compile (baseline) ---
     _, compile_time = run_profiler(
         baseline_compile_func,
         inputs,
@@ -312,19 +334,6 @@ def benchmark(
     results["compile_time"] = compile_time
     if compile_time is not None:
         logger.info(f"[compile] Average execution time: {compile_time} us")
-    
-    _, current_time = run_profiler(
-        current_compile_func,
-        inputs,
-        warmup_steps,
-        exec_steps,
-        prof_config,
-        artifact_subdir,
-        "current",
-        tool_bin_dir=current_bin_dir,
-        cache_dir=current_cache_dir,
-    )
-    results["current_time"] = current_time
     if passed and eager_time is not None and compile_time is not None and compile_time > 0 and eager_time > 0:
         speedup = eager_time / compile_time
         logger.info(f"Speedup: {speedup:.4f}x")
@@ -332,12 +341,12 @@ def benchmark(
     
     logger.info("\n=== Benchmark Summary ===")
     logger.info(f"Precision test: {'Passed' if passed else 'Failed'}")
+    if current_time is not None:
+        logger.info(f"[current] Average execution time: {current_time} us")
     if eager_time is not None:
         logger.info(f"[eager] Average execution time: {eager_time} us")
     if compile_time is not None:
         logger.info(f"[compile] Average execution time: {compile_time} us")
-    if current_time is not None:
-        logger.info(f"[current] Average execution time: {current_time} us")
     logger.info("========================")
 
     return results
