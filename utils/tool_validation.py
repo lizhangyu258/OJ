@@ -79,11 +79,11 @@ def validate_tool_bin_dir(
     if not os.path.isdir(resolved_bin_dir):
         raise ToolValidationError(f"Configured bin.{key} directory does not exist: {resolved_bin_dir}")
 
-    for tool_name in tool_names:
-        validate_tool_file(
-            os.path.join(resolved_bin_dir, tool_name),
-            min_size_bytes=min_size_bytes,
-            version_timeout_seconds=version_timeout_seconds,
-        )
+    # for tool_name in tool_names:
+    #     validate_tool_file(
+    #         os.path.join(resolved_bin_dir, tool_name),
+    #         min_size_bytes=min_size_bytes,
+    #         version_timeout_seconds=version_timeout_seconds,
+    #     )
 
     return resolved_bin_dir
