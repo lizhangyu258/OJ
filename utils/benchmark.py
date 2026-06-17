@@ -93,9 +93,9 @@ def _compile_cache_environment(cache_dir: str, *, clean: bool = True):
 
 
 def _reset_compile_state():
-    reset_func = getattr(getattr(torch, "_dynamo", None), "reset", None)
-    if callable(reset_func):
-        reset_func()
+    """Reset PyTorch compile caches for a clean cold-start compilation."""
+    torch._dynamo.reset()
+    torch.compiler.reset()
 
 
 def setup_environment():
@@ -150,7 +150,6 @@ def _prepare_model_and_compile(
     _reset_compile_state()
     cache_context = _compile_cache_environment(cache_dir) if cache_dir else nullcontext()
     with cache_context, tool_binary_context(tool_bin_dir):
-        torch._dynamo.reset()
         compile_func = torch.compile(model, **compile_options)
         compile_out, codes = run_and_get_code(compile_func, *inputs)
     logger.info(f"compile_out: {compile_out}")
