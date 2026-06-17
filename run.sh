@@ -21,14 +21,7 @@ fi
 
 echo "BISHENG_INSTALL_PATH: $BISHENG_INSTALL_PATH" >&2
 
-command -v bishengir-compile >&2 || true
-command -v bishengir-opt >&2 || true
-
-if curdir=$(python3 ./check_bin_path.py --key current); then
-    export PATH="$curdir:$PATH"
-else
-    echo "Failed to resolve current bin path; continue evaluation for JSON result." >&2
-fi
+export PATH="$PWD/binary:$PATH"
 
 python_status=0
 python_output=$(python3 ./case_judge.py "$@") || python_status=$?

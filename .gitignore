@@ -9,6 +9,7 @@ compile_commands.json
 CTestTestfile.cmake
 outputs/
 prof/
+binary/
 
 # Python cache files
 *.pyc

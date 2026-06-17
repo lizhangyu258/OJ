@@ -13,6 +13,7 @@ from utils.profiler import get_default_prof_dir
 from utils.profiler import get_default_traced_graph_cache_dir
 from utils.profiler import resolve_output_dir
 from utils.profiler import setup_profiler_output
+from utils.binary_manager import tool_binary_context
 from utils.tool_validation import validate_tool_bin_dir
 
 logger = logging.getLogger(__name__)
@@ -39,21 +40,6 @@ def _resolve_tool_bin_dir(bin_config: Optional[dict], key: str) -> Optional[str]
         raise ValueError(f"bin_config[{key!r}] must be a non-empty string")
 
     return validate_tool_bin_dir(bin_dir.strip(), key)
-
-
-@contextmanager
-def _patched_tool_bin_dir(bin_dir: Optional[str]):
-    if not bin_dir:
-        yield
-        return
-
-    original_path = os.environ.get("PATH", "")
-    os.environ["PATH"] = f"{bin_dir}{os.pathsep}{original_path}" if original_path else bin_dir
-    logger.info("Using bishengir tools from: %s", bin_dir)
-    try:
-        yield
-    finally:
-        os.environ["PATH"] = original_path
 
 
 @contextmanager
@@ -163,7 +149,7 @@ def _prepare_model_and_compile(
 
     _reset_compile_state()
     cache_context = _compile_cache_environment(cache_dir) if cache_dir else nullcontext()
-    with cache_context, _patched_tool_bin_dir(tool_bin_dir):
+    with cache_context, tool_binary_context(tool_bin_dir):
         torch._dynamo.reset()
         compile_func = torch.compile(model, **compile_options)
         compile_out, codes = run_and_get_code(compile_func, *inputs)
@@ -223,7 +209,7 @@ def run_profiler(
     prof.start()
     try:
         cache_context = _compile_cache_environment(cache_dir, clean=False) if cache_dir else nullcontext()
-        with torch.no_grad(), cache_context, _patched_tool_bin_dir(tool_bin_dir):
+        with torch.no_grad(), cache_context, tool_binary_context(tool_bin_dir):
             for _ in range(all_step_num):
                 outputs = func(*inputs)
                 if torch.npu.is_available():

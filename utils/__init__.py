@@ -32,7 +32,7 @@ def setup_logging(log_level=None):
         )
     
     # 显式设置项目 logger 级别
-    for module_name in ['case_judge', 'utils.benchmark', 'utils.profiler', 'utils.judge']:
+    for module_name in ['case_judge', 'utils.benchmark', 'utils.profiler', 'utils.judge', 'utils.binary_manager']:
         logger = logging.getLogger(module_name)
         logger.setLevel(numeric_level)
         logger.propagate = True

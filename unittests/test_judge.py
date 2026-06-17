@@ -8,6 +8,7 @@ import unittest
 from contextlib import redirect_stdout
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -23,6 +24,14 @@ from utils.judge import calculate_testcase_score
 from utils.judge import extract_testcase_metrics
 from utils.judge import generate_final_result
 from utils.judge import load_baseline_data
+from utils.binary_manager import copy_tools_to_binary
+from utils.binary_manager import tool_binary_context
+from utils.binary_manager import _clear_binary_dir
+from utils.binary_manager import _ensure_binary_dir
+from utils.binary_manager import _get_binary_dir
+from utils.binary_manager import _verify_binary_resolves
+from utils.tool_validation import ToolValidationError
+from utils.tool_validation import IllegalToolBinaryError
 from utils.profiler import cleanup_directories
 from utils.profiler import get_step_time_from_csv
 from utils.profiler import resolve_output_dir
@@ -736,6 +745,122 @@ col1,col2,abc,col4,col5
 """, encoding="utf-8")
             
             self.assertIsNone(get_step_time_from_csv(str(csv_path)))
+
+
+
+class BinaryManagerTests(unittest.TestCase):
+    def setUp(self):
+        self._temp_dirs = []
+        self._original_path = os.environ.get("PATH", "")
+
+    def tearDown(self):
+        os.environ["PATH"] = self._original_path
+        for d in self._temp_dirs:
+            if os.path.isdir(d):
+                import shutil
+                shutil.rmtree(d, ignore_errors=True)
+
+    def _make_temp_binary_dir(self):
+        """Create a temporary directory to serve as binary/ and register it for cleanup."""
+        d = tempfile.mkdtemp()
+        self._temp_dirs.append(d)
+        return d
+
+    def _make_source_dir_with_tools(self):
+        """Create a temp source directory with valid fake tools."""
+        src_dir = Path(tempfile.mkdtemp())
+        self._temp_dirs.append(str(src_dir))
+        write_fake_tool(src_dir / "bishengir-compile")
+        write_fake_tool(src_dir / "bishengir-opt")
+        return str(src_dir)
+
+    def test_copy_tools_creates_binary_dir(self):
+        binary_dir = self._make_temp_binary_dir()
+        source_dir = self._make_source_dir_with_tools()
+
+        with patch("utils.binary_manager._get_binary_dir", return_value=binary_dir):
+            os.environ["PATH"] = f"{binary_dir}{os.pathsep}{self._original_path}"
+            copy_tools_to_binary(source_dir)
+
+        self.assertTrue(os.path.isfile(os.path.join(binary_dir, "bishengir-compile")))
+        self.assertTrue(os.path.isfile(os.path.join(binary_dir, "bishengir-opt")))
+
+    def test_copy_tools_clears_previous(self):
+        binary_dir = self._make_temp_binary_dir()
+        stale_file = os.path.join(binary_dir, "stale.txt")
+        os.makedirs(binary_dir, exist_ok=True)
+        Path(stale_file).write_text("old", encoding="utf-8")
+
+        source_dir = self._make_source_dir_with_tools()
+
+        with patch("utils.binary_manager._get_binary_dir", return_value=binary_dir):
+            os.environ["PATH"] = f"{binary_dir}{os.pathsep}{self._original_path}"
+            copy_tools_to_binary(source_dir)
+
+        self.assertFalse(os.path.exists(stale_file))
+        self.assertTrue(os.path.isfile(os.path.join(binary_dir, "bishengir-compile")))
+
+    def test_copy_tools_rejects_missing_source_dir(self):
+        binary_dir = self._make_temp_binary_dir()
+
+        with patch("utils.binary_manager._get_binary_dir", return_value=binary_dir):
+            with self.assertRaises(ToolValidationError):
+                copy_tools_to_binary(os.path.join(binary_dir, "nonexistent"))
+
+    def test_copy_tools_rejects_missing_tool(self):
+        binary_dir = self._make_temp_binary_dir()
+        source_dir = Path(tempfile.mkdtemp())
+        self._temp_dirs.append(str(source_dir))
+        write_fake_tool(source_dir / "bishengir-compile")
+        # bishengir-opt is intentionally missing
+
+        with patch("utils.binary_manager._get_binary_dir", return_value=binary_dir):
+            os.environ["PATH"] = f"{binary_dir}{os.pathsep}{self._original_path}"
+            with self.assertRaises(ToolValidationError):
+                copy_tools_to_binary(str(source_dir))
+
+    def test_context_does_nothing_for_none(self):
+        binary_dir = self._make_temp_binary_dir()
+
+        with patch("utils.binary_manager._get_binary_dir", return_value=binary_dir):
+            with tool_binary_context(None):
+                pass
+
+        self.assertEqual(os.listdir(binary_dir), [])
+
+    def test_context_copies_and_verifies(self):
+        binary_dir = self._make_temp_binary_dir()
+        source_dir = self._make_source_dir_with_tools()
+
+        with patch("utils.binary_manager._get_binary_dir", return_value=binary_dir):
+            os.environ["PATH"] = f"{binary_dir}{os.pathsep}{self._original_path}"
+            with tool_binary_context(source_dir):
+                self.assertTrue(os.path.isfile(os.path.join(binary_dir, "bishengir-compile")))
+                self.assertTrue(os.path.isfile(os.path.join(binary_dir, "bishengir-opt")))
+
+    def test_verify_rejects_wrong_path(self):
+        binary_dir = self._make_temp_binary_dir()
+        os.makedirs(binary_dir, exist_ok=True)
+        # Do NOT put binary/ on PATH, so shutil.which cannot find the tools
+
+        with patch("utils.binary_manager._get_binary_dir", return_value=binary_dir):
+            # Clear PATH so tools are definitely not found
+            with unittest.mock.patch.dict(os.environ, {"PATH": ""}, clear=False):
+                with self.assertRaises(RuntimeError) as ctx:
+                    _verify_binary_resolves()
+                self.assertIn("not found on PATH", str(ctx.exception))
+
+    def test_copy_tools_rejects_empty_tool_file(self):
+        binary_dir = self._make_temp_binary_dir()
+        source_dir = Path(tempfile.mkdtemp())
+        self._temp_dirs.append(str(source_dir))
+        # Create empty (too small) tool files
+        (source_dir / "bishengir-compile").write_text("", encoding="utf-8")
+        (source_dir / "bishengir-opt").write_text("", encoding="utf-8")
+
+        with patch("utils.binary_manager._get_binary_dir", return_value=binary_dir):
+            with self.assertRaises(IllegalToolBinaryError):
+                copy_tools_to_binary(str(source_dir))
 
 
 if __name__ == "__main__":
