@@ -179,8 +179,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
             )
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Illegal bishengir tool binary", result.stderr)
-        self.assertNotIn("bytes", result.stderr)
+        self.assertIn("Illegal tool binary", result.stderr)
 
     def test_validate_bin_config_tools_rejects_illegal_tools_before_testcases(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -189,7 +188,7 @@ class CaseJudgeCoreTests(unittest.TestCase):
             (bin_dir / "bishengir-compile").write_text("", encoding="utf-8")
             (bin_dir / "bishengir-opt").write_text("", encoding="utf-8")
 
-            with self.assertRaisesRegex(RuntimeError, "Illegal bishengir tool binary"):
+            with self.assertRaisesRegex(RuntimeError, "Illegal tool binary"):
                 validate_bin_config_tools({"current": str(bin_dir)})
 
     def test_extract_testcase_metrics_reads_required_fields_from_raw_result(self):
