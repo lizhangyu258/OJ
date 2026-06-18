@@ -39,7 +39,7 @@ from utils.profiler import setup_profiler_output
 
 
 def write_fake_tool(path: Path):
-    path.write_text("#!/bin/sh\necho 'hfusion-auto-schedule'\nexit 0\n", encoding="utf-8")
+    path.write_text("#!/bin/sh\necho 'mlir'\nexit 0\n", encoding="utf-8")
     path.chmod(0o755)
 
 

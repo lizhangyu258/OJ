@@ -25,6 +25,34 @@ def _get_validate_case() -> str:
     return os.path.join(_get_project_root(), "validate", "case.mlir")
 
 
+def _validate_version(tool_path: str) -> None:
+    """Run --version to verify the binary is runnable on this system."""
+    try:
+        result = subprocess.run(
+            [tool_path, "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        raise IllegalToolBinaryError("Tool binary not responding")
+    except OSError:
+        raise IllegalToolBinaryError("Tool binary execution failed")
+
+    if result.returncode != 0:
+        combined = result.stdout + result.stderr
+        if "GLIBC" in combined.upper():
+            raise IllegalToolBinaryError(
+                "Tool binary requires an unsupported glibc version. "
+                "The server only supports glibc 2.35 and below."
+            )
+        raise IllegalToolBinaryError("Tool binary version check failed")
+
+    logger.info("Validated %s: version check passed", tool_path)
+
+
 def _validate_compile_tool(tool_path: str) -> None:
     """Run bishengir-compile on validate/case.mlir to verify it produces
     normal output (exit code 0)."""
@@ -83,6 +111,7 @@ def validate_tool_file(tool_path: str) -> str:
 
     tool_name = os.path.basename(resolved_tool_path)
     if tool_name == "bishengir-compile":
+        _validate_version(resolved_tool_path)
         _validate_compile_tool(resolved_tool_path)
 
     return resolved_tool_path
