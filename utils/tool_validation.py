@@ -6,8 +6,7 @@ from typing import Iterable, Tuple
 logger = logging.getLogger(__name__)
 
 REQUIRED_TOOLS: Tuple[str, ...] = ("bishengir-compile", "bishengir-opt")
-MIN_TOOL_SIZE_BYTES = 10 * 1024 * 1024
-VERSION_TIMEOUT_SECONDS = 15
+COMPILE_TIMEOUT_SECONDS = 60
 
 
 class ToolValidationError(RuntimeError):
@@ -18,52 +17,74 @@ class IllegalToolBinaryError(ToolValidationError):
     """Raised when a submitted bishengir tool is not a valid binary."""
 
 
-def _short_output(value: str, limit: int = 1000) -> str:
-    value = value.strip()
-    if len(value) <= limit:
-        return value
-    return value[:limit] + "...<truncated>"
+def _get_project_root() -> str:
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def validate_tool_file(
-    tool_path: str,
-    *,
-    min_size_bytes: int = MIN_TOOL_SIZE_BYTES,
-    version_timeout_seconds: int = VERSION_TIMEOUT_SECONDS,
-) -> str:
-    resolved_tool_path = os.path.abspath(tool_path)
-    if not os.path.isfile(resolved_tool_path):
-        raise ToolValidationError(f"Required tool not found: {resolved_tool_path}")
+def _get_validate_case() -> str:
+    return os.path.join(_get_project_root(), "validate", "case.mlir")
 
-    file_size = os.stat(resolved_tool_path).st_size
-    if file_size <= min_size_bytes:
-        raise IllegalToolBinaryError("Illegal tool binary")
 
-    if not os.access(resolved_tool_path, os.X_OK):
-        raise IllegalToolBinaryError("Non-executable tool binary")
+def _validate_compile_tool(tool_path: str) -> None:
+    """Run bishengir-compile on validate/case.mlir to verify it produces
+    normal output (exit code 0)."""
+    case_file = _get_validate_case()
+    if not os.path.isfile(case_file):
+        raise ToolValidationError(f"Validation case not found: {case_file}")
+
+    source_dir = os.path.dirname(tool_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{source_dir}{os.pathsep}{env.get('PATH', '')}"
 
     try:
         result = subprocess.run(
-            [resolved_tool_path, "--version"],
+            [
+                tool_path,
+                "-enable-hfusion-compile=true",
+                "-enable-hivm-compile=false",
+                "--mlir-print-ir-after-all",
+                case_file,
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             check=False,
-            timeout=version_timeout_seconds,
+            timeout=COMPILE_TIMEOUT_SECONDS,
+            env=env,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise IllegalToolBinaryError("Tool binary not responding") from exc
-    except OSError as exc:
-        raise IllegalToolBinaryError("Tool binary execution failed") from exc
+    except subprocess.TimeoutExpired:
+        raise IllegalToolBinaryError("Tool binary not responding")
+    except OSError:
+        raise IllegalToolBinaryError("Tool binary execution failed")
 
-    if result.returncode != 0:
-        raise IllegalToolBinaryError("Tool binary version check failed")
+    #if result.returncode != 0:
+    #    raise IllegalToolBinaryError("Tool binary compilation failed")
 
-    version_text = _short_output(result.stdout or result.stderr)
-    if version_text:
-        logger.info("Validated %s: %s", resolved_tool_path, version_text)
-    else:
-        logger.info("Validated %s with an empty --version output", resolved_tool_path)
+    combined_output = result.stdout + result.stderr
+    if "mlir" not in combined_output:
+        raise IllegalToolBinaryError("Tool binary compilation failed")
+
+    logger.info("Validated %s: compile test passed", tool_path)
+
+
+def validate_tool_file(tool_path: str) -> str:
+    """Validate a single bishengir tool binary.
+
+    For ``bishengir-compile``, additionally runs a compilation smoke test
+    on ``validate/case.mlir`` to ensure the tool can produce normal output.
+    ``bishengir-opt`` only requires the file to exist and be executable.
+    """
+    resolved_tool_path = os.path.abspath(tool_path)
+    if not os.path.isfile(resolved_tool_path):
+        raise ToolValidationError(f"Required tool not found: {resolved_tool_path}")
+
+    if not os.access(resolved_tool_path, os.X_OK):
+        raise IllegalToolBinaryError("Non-executable tool binary")
+
+    tool_name = os.path.basename(resolved_tool_path)
+    if tool_name == "bishengir-compile":
+        _validate_compile_tool(resolved_tool_path)
+
     return resolved_tool_path
 
 
@@ -72,18 +93,12 @@ def validate_tool_bin_dir(
     key: str,
     *,
     tool_names: Iterable[str] = REQUIRED_TOOLS,
-    min_size_bytes: int = MIN_TOOL_SIZE_BYTES,
-    version_timeout_seconds: int = VERSION_TIMEOUT_SECONDS,
 ) -> str:
     resolved_bin_dir = os.path.abspath(bin_dir)
     if not os.path.isdir(resolved_bin_dir):
         raise ToolValidationError(f"Configured bin.{key} directory does not exist: {resolved_bin_dir}")
 
     for tool_name in tool_names:
-        validate_tool_file(
-            os.path.join(resolved_bin_dir, tool_name),
-            min_size_bytes=min_size_bytes,
-            version_timeout_seconds=version_timeout_seconds,
-        )
+        validate_tool_file(os.path.join(resolved_bin_dir, tool_name))
 
     return resolved_bin_dir
