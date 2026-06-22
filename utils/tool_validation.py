@@ -25,6 +25,16 @@ def _get_validate_case() -> str:
     return os.path.join(_get_project_root(), "validate", "case.mlir")
 
 
+def _version_output(result) -> str:
+    """Return a brief snapshot of --version output for error diagnostics."""
+    combined = (result.stdout + result.stderr).strip()
+    if not combined:
+        return "(no output)"
+    if len(combined) <= 500:
+        return combined
+    return combined[:500] + "...<truncated>"
+
+
 def _validate_version(tool_path: str) -> None:
     """Run --version to verify the binary is runnable on this system."""
     try:
@@ -38,17 +48,31 @@ def _validate_version(tool_path: str) -> None:
         )
     except subprocess.TimeoutExpired:
         raise IllegalToolBinaryError("Tool binary not responding")
-    except OSError:
+    except OSError as exc:
+        if "Exec format error" in str(exc):
+            raise IllegalToolBinaryError(
+                "Tool binary architecture mismatch. "
+                "Please compile for aarch64 (ARM 64-bit)."
+            )
         raise IllegalToolBinaryError("Tool binary execution failed")
 
     if result.returncode != 0:
         combined = result.stdout + result.stderr
+        if "Exec format error" in combined:
+            raise IllegalToolBinaryError(
+                "Tool binary architecture mismatch. "
+                "Please compile for aarch64 (ARM 64-bit)."
+            )
         if "GLIBC" in combined.upper():
             raise IllegalToolBinaryError(
                 "Tool binary requires an unsupported glibc version. "
-                "The server only supports glibc 2.35 and below."
+                "The server only supports glibc 2.35 and below. "
+                f"--version output: {_version_output(result)}"
             )
-        raise IllegalToolBinaryError("Tool binary version check failed")
+        raise IllegalToolBinaryError(
+            f"Tool binary version check failed. "
+            f"--version output: {_version_output(result)}"
+        )
 
     logger.info("Validated %s: version check passed", tool_path)
 
