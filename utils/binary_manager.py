@@ -116,6 +116,20 @@ def copy_tools_to_binary(source_dir: str) -> None:
     _verify_binary_resolves()
 
 
+def _ensure_tools_executable() -> None:
+    """Make sure every tool in binary/ has its execute bits set."""
+    binary_dir = _get_binary_dir()
+    for tool_name in REQUIRED_TOOLS:
+        tool_path = os.path.join(binary_dir, tool_name)
+        if not os.path.isfile(tool_path):
+            continue
+        current_mode = os.stat(tool_path).st_mode
+        need_bits = stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+        if (current_mode & need_bits) != need_bits:
+            os.chmod(tool_path, current_mode | need_bits)
+            logger.info("Fixed execute permission: %s", tool_path)
+
+
 @contextmanager
 def tool_binary_context(source_dir: Optional[str]) -> Iterator[None]:
     """Context manager that swaps the tools in binary/ to those from *source_dir*.
@@ -135,6 +149,8 @@ def tool_binary_context(source_dir: Optional[str]) -> Iterator[None]:
         copy_tools_to_binary(source_dir)
     finally:
         _lock.release()
+
+    _ensure_tools_executable()
 
     try:
         yield
