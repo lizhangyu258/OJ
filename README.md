@@ -31,7 +31,7 @@ OJ/
 
 ```yaml
 bin:
-  baseline: /usr/local/Ascend/cann-9.0.0/bin
+  baseline: /usr/local/Ascend/latest/compiler/bin
   current: /coursegrader/submit
 ```
 
