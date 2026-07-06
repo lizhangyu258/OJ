@@ -242,7 +242,7 @@ RUN printf '%s\n' '#!/usr/bin/env bash' 'true' > /etc/profile.d/copyright.sh \
     && mkdir -p /coursegrader/submit /coursegrader/testdata /coursegrader/persisted /coursegrader/dockerext
 
 RUN git clone https://gitcode.com/liupengcheng2012/OJ.git /coursegrader/dockerext/OJ \
-    && git -C /coursegrader/dockerext/OJ checkout dev
+    && git -C /coursegrader/dockerext/OJ checkout dev-8.5.0
 
 WORKDIR /coursegrader/dockerext/OJ
 
