@@ -15,8 +15,8 @@ exec 2>"$OJ_RUN_LOG"
 
 git pull --quiet >&2 || true
 
-if [ -f /usr/local/Ascend/ascend-toolkit/set_env.sh ]; then
-    source /usr/local/Ascend/ascend-toolkit/set_env.sh >&2 || true
+if [ -f /usr/local/Ascend/cann/set_env.sh ]; then
+    source /usr/local/Ascend/cann/set_env.sh >&2 || true
 fi
 
 echo "BISHENG_INSTALL_PATH: $BISHENG_INSTALL_PATH" >&2

@@ -1,3 +1,3 @@
 bin:
-  baseline: /coursegrader/dockerext/OJ/baseline
-  current: /coursegrader/submit
+  baseline: /workspace/OJ/baseline
+  current: /workspace/OJ/release-v1.1.x
