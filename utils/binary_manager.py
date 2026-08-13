@@ -21,6 +21,8 @@ from utils.tool_validation import REQUIRED_TOOLS, validate_tool_file
 logger = logging.getLogger(__name__)
 
 BINARY_DIR_NAME = "binary"
+REAL_COMPILE_NAME = "bishengir-compile.real"
+IR_DUMP_DIR_ENV = "OJ_BISHENGIR_IR_DUMP_DIR"
 
 _lock = threading.Lock()
 
@@ -86,7 +88,25 @@ def _verify_binary_resolves() -> None:
     logger.info("Verified all tools resolve to local binary directory: %s", binary_dir)
 
 
-def copy_tools_to_binary(source_dir: str) -> None:
+def _get_compile_wrapper_path() -> str:
+    return os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "bishengir_compile_wrapper.py",
+    )
+
+
+def _make_executable(path: str) -> None:
+    current_mode = os.stat(path).st_mode
+    os.chmod(
+        path,
+        current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+    )
+
+
+def copy_tools_to_binary(
+    source_dir: str,
+    compile_ir_dir: Optional[str] = None,
+) -> None:
     """Clear binary/, copy tools from *source_dir*, and verify PATH resolution.
 
     Each tool is validated via :func:`validate_tool_file` before copying.
@@ -101,15 +121,19 @@ def copy_tools_to_binary(source_dir: str) -> None:
         # Validate before copying — raises ToolValidationError or subclass on failure
         validate_tool_file(source_path)
 
-        dest_path = os.path.join(binary_dir, tool_name)
-        shutil.copy2(source_path, dest_path)
+        if tool_name == "bishengir-compile" and compile_ir_dir:
+            real_dest_path = os.path.join(binary_dir, REAL_COMPILE_NAME)
+            shutil.copy2(source_path, real_dest_path)
+            _make_executable(real_dest_path)
+
+            dest_path = os.path.join(binary_dir, tool_name)
+            shutil.copy2(_get_compile_wrapper_path(), dest_path)
+        else:
+            dest_path = os.path.join(binary_dir, tool_name)
+            shutil.copy2(source_path, dest_path)
 
         # Ensure execute bits are set regardless of copy2 behaviour
-        current_mode = os.stat(dest_path).st_mode
-        os.chmod(
-            dest_path,
-            current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
-        )
+        _make_executable(dest_path)
 
         logger.info("Copied %s -> %s", source_path, dest_path)
 
@@ -131,14 +155,17 @@ def _ensure_tools_executable() -> None:
 
 
 @contextmanager
-def tool_binary_context(source_dir: Optional[str]) -> Iterator[None]:
+def tool_binary_context(
+    source_dir: Optional[str],
+    compile_ir_dir: Optional[str] = None,
+) -> Iterator[None]:
     """Context manager that swaps the tools in binary/ to those from *source_dir*.
 
     When *source_dir* is ``None`` or an empty string this is a no-op.
 
-    The context manager acquires a lock while copying, so only one thread
-    can mutate binary/ at a time.  The lock is released before yielding
-    to the caller, allowing concurrent tool execution.
+    The context manager acquires a lock while copying.  The OJ calls this
+    context sequentially; do not overlap contexts that swap different tool
+    directories.
     """
     if not source_dir:
         yield
@@ -146,13 +173,24 @@ def tool_binary_context(source_dir: Optional[str]) -> Iterator[None]:
 
     _lock.acquire()
     try:
-        copy_tools_to_binary(source_dir)
+        copy_tools_to_binary(source_dir, compile_ir_dir=compile_ir_dir)
     finally:
         _lock.release()
 
     _ensure_tools_executable()
 
+    original_dump_dir = os.environ.get(IR_DUMP_DIR_ENV)
+    if compile_ir_dir:
+        resolved_dump_dir = os.path.abspath(compile_ir_dir)
+        os.makedirs(resolved_dump_dir, exist_ok=True)
+        os.environ[IR_DUMP_DIR_ENV] = resolved_dump_dir
+
     try:
         yield
     finally:
+        if compile_ir_dir:
+            if original_dump_dir is None:
+                os.environ.pop(IR_DUMP_DIR_ENV, None)
+            else:
+                os.environ[IR_DUMP_DIR_ENV] = original_dump_dir
         pass  # no cleanup — next invocation will clear-and-recopy

@@ -137,6 +137,7 @@ def _prepare_model_and_compile(
     compile_options: Optional[dict],
     tool_bin_dir: Optional[str] = None,
     cache_dir: Optional[str] = None,
+    save_compile_ir: bool = False,
 ):
     """
     公共辅助函数：准备模型并编译
@@ -149,7 +150,15 @@ def _prepare_model_and_compile(
 
     _reset_compile_state()
     cache_context = _compile_cache_environment(cache_dir) if cache_dir else nullcontext()
-    with cache_context, tool_binary_context(tool_bin_dir):
+    compile_ir_dir = (
+        os.path.join(cache_dir, "bishengir_compile_ir")
+        if save_compile_ir and cache_dir
+        else None
+    )
+    with cache_context, tool_binary_context(
+        tool_bin_dir,
+        compile_ir_dir=compile_ir_dir,
+    ):
         compile_func = torch.compile(model, **compile_options)
         compile_out, codes = run_and_get_code(compile_func, *inputs)
     logger.info(f"compile_out: {compile_out}")
@@ -182,6 +191,7 @@ def run_profiler(
     run_name: str = "",
     tool_bin_dir: Optional[str] = None,
     cache_dir: Optional[str] = None,
+    save_compile_ir: bool = False,
 ) -> Tuple[Optional[str], Optional[float]]:
     if prof_config is None:
         prof_config = get_default_prof_config()
@@ -208,7 +218,15 @@ def run_profiler(
     prof.start()
     try:
         cache_context = _compile_cache_environment(cache_dir, clean=False) if cache_dir else nullcontext()
-        with torch.no_grad(), cache_context, tool_binary_context(tool_bin_dir):
+        compile_ir_dir = (
+            os.path.join(cache_dir, "bishengir_compile_ir")
+            if save_compile_ir and cache_dir
+            else None
+        )
+        with torch.no_grad(), cache_context, tool_binary_context(
+            tool_bin_dir,
+            compile_ir_dir=compile_ir_dir,
+        ):
             for _ in range(all_step_num):
                 outputs = func(*inputs)
                 if torch.npu.is_available():
@@ -234,6 +252,7 @@ def benchmark(
     prof_config=None,
     artifact_subdir: Optional[str] = None,
     bin_config: Optional[dict] = None,
+    save_compile_ir: bool = False,
 ) -> dict:
     setup_environment()
     
@@ -256,6 +275,7 @@ def benchmark(
         compile_options,
         tool_bin_dir=current_bin_dir,
         cache_dir=current_cache_dir,
+        save_compile_ir=save_compile_ir,
     )
 
     results = {
@@ -289,6 +309,7 @@ def benchmark(
         "current",
         tool_bin_dir=current_bin_dir,
         cache_dir=current_cache_dir,
+        save_compile_ir=save_compile_ir,
     )
     results["current_time"] = current_time
     if current_time is not None:
@@ -316,6 +337,7 @@ def benchmark(
         compile_options,
         tool_bin_dir=baseline_bin_dir,
         cache_dir=baseline_cache_dir,
+        save_compile_ir=save_compile_ir,
     )
 
     # --- Phase 5: profile compile (baseline) ---
@@ -329,6 +351,7 @@ def benchmark(
         "compile",
         tool_bin_dir=baseline_bin_dir,
         cache_dir=baseline_cache_dir,
+        save_compile_ir=save_compile_ir,
     )
     results["compile_time"] = compile_time
     if compile_time is not None:

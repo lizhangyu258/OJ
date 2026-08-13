@@ -94,6 +94,14 @@ def parse_args(argv=None):
         action="store_true",
         help="Remove generated artifact directories after evaluation finishes.",
     )
+    parser.add_argument(
+        "--save-compile-ir",
+        action="store_true",
+        help=(
+            "Cache bishengir-compile pass-manager IR under each baseline/current "
+            "traced_graph_cache directory. This increases compilation time and disk usage."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -234,7 +242,13 @@ def testcase_timeout(timeout_seconds):
         signal.signal(signal.SIGALRM, previous_handler)
 
 # 运行单个测试用例
-def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS, benchmark_runner=None, bin_config=None):
+def run_testcase(
+    testcase_file,
+    timeout_seconds=TESTCASE_TIMEOUT_SECONDS,
+    benchmark_runner=None,
+    bin_config=None,
+    save_compile_ir=False,
+):
     testcase_name = os.path.basename(testcase_file)
     logger.info(f"Running test case: {testcase_name}")
 
@@ -248,6 +262,8 @@ def run_testcase(testcase_file, timeout_seconds=TESTCASE_TIMEOUT_SECONDS, benchm
             testcase_spec = normalize_testcase_spec(testcase_spec, testcase_name)
             if bin_config is not None:
                 testcase_spec["bin_config"] = dict(bin_config)
+            if save_compile_ir:
+                testcase_spec["save_compile_ir"] = True
 
             if benchmark_runner is None:
                 from utils.benchmark import benchmark as benchmark_runner_impl
@@ -307,7 +323,11 @@ def main(argv=None):
         # 运行所有测试用例
         testcase_results = []
         for testcase_file in testcase_files:
-            result = run_testcase(testcase_file, bin_config=bin_config)
+            result = run_testcase(
+                testcase_file,
+                bin_config=bin_config,
+                save_compile_ir=args.save_compile_ir,
+            )
             testcase_results.append(result)
 
         # 生成最终结果

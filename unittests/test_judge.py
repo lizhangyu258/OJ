@@ -36,6 +36,8 @@ from utils.profiler import cleanup_directories
 from utils.profiler import get_step_time_from_csv
 from utils.profiler import resolve_output_dir
 from utils.profiler import setup_profiler_output
+from utils.bishengir_compile_wrapper import _is_metadata_only_invocation
+from utils.bishengir_compile_wrapper import _with_ir_printing
 
 
 def write_fake_tool(path: Path):
@@ -85,11 +87,17 @@ class CaseJudgeCoreTests(unittest.TestCase):
         args = parse_args([])
 
         self.assertFalse(args.clean_up)
+        self.assertFalse(args.save_compile_ir)
 
     def test_parse_args_enables_clean_up_option(self):
         args = parse_args(["--clean-up"])
 
         self.assertTrue(args.clean_up)
+
+    def test_parse_args_enables_save_compile_ir_option(self):
+        args = parse_args(["--save-compile-ir"])
+
+        self.assertTrue(args.save_compile_ir)
 
     def test_load_bin_config_reads_bin_yaml(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -524,6 +532,36 @@ class CaseJudgeCoreTests(unittest.TestCase):
             {"baseline": "/opt/base/bin", "current": "/opt/current/bin"},
         )
 
+    def test_run_testcase_passes_save_compile_ir_to_benchmark(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            testcase_path = Path(temp_dir) / "temp_case.py"
+            testcase_path.write_text(
+                """def build_testcase():
+    return {"model_or_func": "demo", "inputs": (1, 2)}
+""",
+                encoding="utf-8",
+            )
+            benchmark_calls = []
+
+            def fake_benchmark_runner(**kwargs):
+                benchmark_calls.append(kwargs)
+                return {
+                    "precision_passed": True,
+                    "eager_time": 100.0,
+                    "compile_time": 50.0,
+                    "current_time": 40.0,
+                }
+
+            result = run_testcase(
+                str(testcase_path),
+                timeout_seconds=0,
+                benchmark_runner=fake_benchmark_runner,
+                save_compile_ir=True,
+            )
+
+        self.assertEqual(result["exit_code"], 0)
+        self.assertTrue(benchmark_calls[0]["save_compile_ir"])
+
     def test_run_testcase_wraps_exceptions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             testcase_path = Path(temp_dir) / "temp_case.py"
@@ -745,6 +783,26 @@ col1,col2,abc,col4,col5
 
 
 
+class BiShengIRCompileWrapperTests(unittest.TestCase):
+    def test_ir_print_option_is_inserted_before_downstream_separator(self):
+        arguments = _with_ir_printing(["input.mlir", "--", "--target=x"])
+
+        self.assertEqual(
+            arguments,
+            ["input.mlir", "--mlir-print-ir-after-all", "--", "--target=x"],
+        )
+
+    def test_existing_ir_print_option_is_not_duplicated(self):
+        arguments = _with_ir_printing(
+            ["--mlir-print-ir-after-all=true", "input.mlir"]
+        )
+
+        self.assertEqual(arguments.count("--mlir-print-ir-after-all"), 1)
+
+    def test_version_invocation_is_not_treated_as_compilation(self):
+        self.assertTrue(_is_metadata_only_invocation(["--version"]))
+        self.assertFalse(_is_metadata_only_invocation(["input.mlir"]))
+
 class BinaryManagerTests(unittest.TestCase):
     def setUp(self):
         self._temp_dirs = []
@@ -796,6 +854,24 @@ class BinaryManagerTests(unittest.TestCase):
 
         self.assertFalse(os.path.exists(stale_file))
         self.assertTrue(os.path.isfile(os.path.join(binary_dir, "bishengir-compile")))
+
+    def test_copy_tools_installs_compile_wrapper_for_ir_dump(self):
+        binary_dir = self._make_temp_binary_dir()
+        source_dir = self._make_source_dir_with_tools()
+
+        with patch(
+            "utils.binary_manager._get_binary_dir", return_value=binary_dir
+        ), patch("utils.binary_manager.validate_tool_file"), patch(
+            "utils.binary_manager._verify_binary_resolves"
+        ):
+            os.environ["PATH"] = f"{binary_dir}{os.pathsep}{self._original_path}"
+            copy_tools_to_binary(source_dir, compile_ir_dir="unused-in-copy")
+
+        wrapper = Path(binary_dir) / "bishengir-compile"
+        real_compiler = Path(binary_dir) / "bishengir-compile.real"
+        self.assertTrue(wrapper.is_file())
+        self.assertTrue(real_compiler.is_file())
+        self.assertIn("mlir-print-ir-after-all", wrapper.read_text(encoding="utf-8"))
 
     def test_copy_tools_rejects_missing_source_dir(self):
         binary_dir = self._make_temp_binary_dir()

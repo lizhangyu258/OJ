@@ -62,6 +62,31 @@ chmod +x run.sh
 ./run.sh
 ```
 
+如需保存 OJ 实际调用 `bishengir-compile` 时各个 pass 后的 IR，可运行：
+
+```bash
+./run.sh --save-compile-ir
+```
+
+该选项不会修改 testcase 或输入 MLIR。它会为实际编译命令追加
+`--mlir-print-ir-after-all`，并分别保存 baseline/current 的输出：
+
+```text
+traced_graph_cache/<case>/<phase-uuid>/bishengir_compile_ir/
+├── <id>-<kernel>.command.json
+└── <id>-<kernel>.ir.log
+```
+
+`command.json` 记录工作目录和完整编译参数，`ir.log` 保存编译器 stderr 中的
+pass-manager IR dump。该模式会增加编译耗时和磁盘占用，只应用于编译分析，
+正式性能测量时不要开启。
+
+单次编译默认最多缓存 512 MiB；可通过环境变量调整，例如：
+
+```bash
+OJ_BISHENGIR_IR_MAX_BYTES=$((1024 * 1024 * 1024)) ./run.sh --save-compile-ir
+```
+
 如需在评测结束后自动删除项目根目录生成的 `prof/` 和 `traced_graph_cache/` 目录：
 
 ```bash
