@@ -72,7 +72,7 @@ chmod +x run.sh
 `--mlir-print-ir-after-all`，并分别保存 baseline/current 的输出：
 
 ```text
-traced_graph_cache/<case>/<phase-uuid>/bishengir_compile_ir/
+traced_graph_cache/<case>/<phase-uuid>/bishengir_cache_dir/
 ├── <id>-<kernel>.command.json
 └── <id>-<kernel>.ir.log
 ```

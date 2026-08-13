@@ -151,7 +151,7 @@ def _prepare_model_and_compile(
     _reset_compile_state()
     cache_context = _compile_cache_environment(cache_dir) if cache_dir else nullcontext()
     compile_ir_dir = (
-        os.path.join(cache_dir, "bishengir_compile_ir")
+        os.path.join(cache_dir, "bishengir_cache_dir")
         if save_compile_ir and cache_dir
         else None
     )
@@ -219,7 +219,7 @@ def run_profiler(
     try:
         cache_context = _compile_cache_environment(cache_dir, clean=False) if cache_dir else nullcontext()
         compile_ir_dir = (
-            os.path.join(cache_dir, "bishengir_compile_ir")
+            os.path.join(cache_dir, "bishengir_cache_dir")
             if save_compile_ir and cache_dir
             else None
         )
